@@ -54,6 +54,11 @@ python3 webapp.py --no_auth
 But in this case, everyone with the public link will be able to access the webapp, even if you did not share 
 the username and password with them.
 
+## Logging
+
+All interactions (input/output pairs) with the models will be saved into a csv file, namely `text_logs/log.csv`
+for simple causal language modeling and into `chatbot_logs/log.csv` for conversations (chats) with the model.
+
 ## Computational power requirements
 
 Finally, note that running LLMs is very costly in terms of computational power. For this reason, it is highly
