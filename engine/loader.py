@@ -3,7 +3,7 @@ import re
 import math
 
 import torch
-from transformers import AutoModelForCausalLM, AutoModelForMaskedLM, AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 def _infer_model_size(model_name: str) -> float:
     """Return the number of parameters a model has from its name if it can be inferred from it. Raise a 
@@ -292,7 +292,7 @@ LLAMA2_ADDITIONAL_TOKENIZER_KWARGS = {
 
 
 # Decoder-based models
-DECODER_MODELS_MAPPING = {
+ALL_MODELS_MAPPING = {
     **BLOOM_MODELS_MAPPING,
     **DIALO_GPT_MODELS_MAPPING,
     **STABLE_LM_MODELS_MAPPING,
@@ -306,7 +306,7 @@ DECODER_MODELS_MAPPING = {
     **VICUNA_MODELS_MAPPING,
     **LLAMA2_MODELS_MAPPING,
 }
-DECODER_MODELS_DTYPES_MAPPING = {
+ALL_MODELS_DTYPES_MAPPING = {
     **BLOOM_MODELS_DTYPES,
     **DIALO_GPT_MODELS_DTYPES,
     **STABLE_LM_MODELS_DTYPES,
@@ -320,7 +320,7 @@ DECODER_MODELS_DTYPES_MAPPING = {
     **VICUNA_MODELS_DTYPES,
     **LLAMA2_MODELS_DTYPES,
 }
-DECODER_MODELS_PARAMS_MAPPING = {
+ALL_MODELS_PARAMS_MAPPING = {
     **BLOOM_MODELS_PARAMS,
     **DIALO_GPT_MODELS_PARAMS,
     **STABLE_LM_MODELS_PARAMS,
@@ -334,98 +334,17 @@ DECODER_MODELS_PARAMS_MAPPING = {
     **VICUNA_MODELS_PARAMS,
     **LLAMA2_MODELS_PARAMS,
 }
-DECODER_ADDITIONAL_MODEL_KWARGS_MAPPING = {
+ALL_MODELS_ADDITIONAL_MODEL_KWARGS_MAPPING = {
     **STAR_CODER_ADDITIONAL_MODEL_KWARGS,
     **CODEGEN2_ADDITIONAL_MODEL_KWARGS,
 }
-DECODER_ADDITIONAL_TOKENIZER_KWARGS_MAPPING = {
+ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS_MAPPING = {
     **CODEGEN2_ADDITIONAL_TOKENIZER_KWARGS,
     **VICUNA_ADDITIONAL_TOKENIZER_KWARGS,
     **LLAMA2_ADDITIONAL_TOKENIZER_KWARGS,
 }
 
 
-
-# Pretrained BERT models
-BERT_MODELS_MAPPING = {
-    'bert-base-uncased': 'bert-base-uncased',
-    'bert-large-uncased': 'bert-large-uncased',
-    'bert-base-cased': 'bert-base-cased',
-    'bert-large-cased': 'bert-large-cased',
-}
-
-
-# Pretrained RoBERTa models
-ROBERTA_MODELS_MAPPING = {
-    'roberta-base': 'roberta-base',
-    'roberta-large': 'roberta-large',
-}
-
-
-# Encoder-based models
-ENCODER_MODELS_MAPPING = {
-    **BERT_MODELS_MAPPING,
-    **ROBERTA_MODELS_MAPPING,
-}
-
-
-
-# Pretrained BART models
-BART_MODELS_MAPPING = {
-    'bart-base': 'facebook/bart-base',
-    'bart-large': 'facebook/bart-large',
-}
-
-
-# Pretrained T5 models
-T5_MODELS_MAPPING = {
-    't5-small': 't5-small',
-    't5-base': 't5-base',
-    't5-large': 't5-large',
-    't5-3B': 't5-3b',
-    't5-11B': 't5-11b',
-}
-
-
-# Pretrained FLAN-T5 models
-FLAN_T5_MODELS_MAPPING = {
-    'flan-t5-small': 'google/flan-t5-small',
-    'flan-t5-base': 'google/flan-t5-base',
-    'flan-t5-large': 'google/flan-t5-large',
-    'flan-t5-xl': 'google/flan-t5-xl',
-    'flan-t5-xxl': 'google/flan-t5-xxl',
-}
-
-
-# Full transformer-based (encoder + decoder) models
-TRANSFORMER_MODELS_MAPPING = {
-    **BART_MODELS_MAPPING,
-    **T5_MODELS_MAPPING,
-    **FLAN_T5_MODELS_MAPPING,
-}
-
-
-
-
-
-# All models mapping
-ALL_MODELS_MAPPING = {
-    **DECODER_MODELS_MAPPING,
-    **ENCODER_MODELS_MAPPING, 
-    **TRANSFORMER_MODELS_MAPPING,
-}
-ALL_MODELS_DTYPES_MAPPING = {
-    **DECODER_MODELS_DTYPES_MAPPING,
-}
-ALL_MODELS_PARAMS_MAPPING = {
-    **DECODER_MODELS_PARAMS_MAPPING,
-}
-ALL_MODELS_ADDITIONAL_MODEL_KWARGS_MAPPING = {
-    **DECODER_ADDITIONAL_MODEL_KWARGS_MAPPING,
-}
-ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS_MAPPING = {
-    **DECODER_ADDITIONAL_TOKENIZER_KWARGS_MAPPING,
-}
 
 # Summarize all supported model names
 ALLOWED_MODELS = tuple(ALL_MODELS_MAPPING.keys())
@@ -675,22 +594,11 @@ def load_model(model_name: str, quantization_8bits: bool = False, quantization_4
             device_map = 'balanced'
 
     
-    # Initiate different model types depending on architecture
-    if model_name in DECODER_MODELS_MAPPING.keys():
-        model = AutoModelForCausalLM.from_pretrained(DECODER_MODELS_MAPPING[model_name], device_map=device_map,
-                                                    torch_dtype=dtype, load_in_8bit=quantization_8bits,
-                                                    load_in_4bit=quantization_4bits, low_cpu_mem_usage=True,
-                                                    **additional_kwargs)
-    elif model_name in ENCODER_MODELS_MAPPING.keys():
-        model = AutoModelForMaskedLM.from_pretrained(ENCODER_MODELS_MAPPING[model_name], device_map=device_map,
-                                                    torch_dtype=dtype, load_in_8bit=quantization_8bits,
-                                                    load_in_4bit=quantization_4bits, low_cpu_mem_usage=True,
-                                                    **additional_kwargs)
-    elif model_name in TRANSFORMER_MODELS_MAPPING.keys():
-        model = AutoModelForSeq2SeqLM.from_pretrained(TRANSFORMER_MODELS_MAPPING[model_name], device_map=device_map,
-                                                      torch_dtype=dtype, load_in_8bit=quantization_8bits,
-                                                      load_in_4bit=quantization_4bits, low_cpu_mem_usage=True,
-                                                      **additional_kwargs)
+    # Load model
+    model = AutoModelForCausalLM.from_pretrained(ALL_MODELS_MAPPING[model_name], device_map=device_map,
+                                                torch_dtype=dtype, load_in_8bit=quantization_8bits,
+                                                load_in_4bit=quantization_4bits, low_cpu_mem_usage=True,
+                                                **additional_kwargs)
     
     # If the flag is active we directly put our model on one gpu without using any device_map (this is 
     # more efficient). But if the model is quantized, this is already done automatically because quantization
