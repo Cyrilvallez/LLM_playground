@@ -1,5 +1,6 @@
 import gc
 import os
+import argparse
 
 import torch
 import gradio as gr
@@ -356,4 +357,15 @@ with demo:
     
 
 if __name__ == '__main__':
-    demo.queue().launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE])
+
+    parser = argparse.ArgumentParser(description='LLM Playground')
+    parser.add_argument('--no_auth', action='store_true',
+                        help='If given, will NOT require authentification to access the webapp.')
+    
+    args = parser.parse_args()
+    no_auth = args.no_auth
+    
+    if no_auth:
+        demo.queue().launch(share=True, blocked_paths=[CREDENTIALS_FILE])
+    else:
+        demo.queue().launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE])
