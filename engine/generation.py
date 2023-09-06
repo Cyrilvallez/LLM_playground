@@ -690,23 +690,3 @@ class HFModel(object):
         return get_conversation_template(self.model_name)
    
 
-
-
-def expand_past_keys(past_key_values, batch_size):
-
-    if batch_size <=1:
-        return past_key_values
-    
-    new = []
-    with torch.no_grad():
-        for i in range(len(past_key_values)):
-            new_ = []
-            for j in range(len(past_key_values[i])):
-                new_.append(past_key_values[i][j].repeat(batch_size, 1, 1))
-            new.append(tuple(new_))
-
-    return tuple(new)
-
-
-
-
