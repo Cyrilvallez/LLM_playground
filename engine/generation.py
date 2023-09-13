@@ -7,7 +7,7 @@ import copy
 
 import torch
 import numpy as np
-from transformers import StoppingCriteriaList
+from transformers import StoppingCriteriaList, GenerationConfig
 
 from engine import loader
 from engine import stopping
@@ -232,6 +232,88 @@ class HFModel(object):
         return stopping_criteria, stopping_patterns
     
 
+    def create_generation_config(self, max_new_tokens: int, min_new_tokens: int, do_sample: bool,
+                                 top_k: int | None, top_p: float | None, temperature: float) -> GenerationConfig:
+        """Create a new `GenerationConfig` object to pass to `model.generate()` to control the generation strategy.
+        This is needed because by default `generate()` uses `self.model.generation_config` if the `generation_config`
+        parameter is not provided, which may conflict with some of our parameters and thus provide incorrect
+        or suprising results.
+        
+        Parameters
+        ----------
+        max_new_tokens : int
+            How many new tokens to generate.
+        min_new_tokens : int
+            The minimum number of tokens to generate, by setting the probability of EOS token to 0. It is useful to
+            force the model to generate an output, instead of immediately generating EOS,.
+        do_sample : bool
+            Whether to introduce randomness in the generation.
+        top_k : int | None
+            How many tokens with max probability to consider for random sampling. Not used if 
+            `do_sample=False`. You can deactivate top_k sampling by providing `top_k=0` or `top_k=None`. Note 
+            that if you provide both `top_k` and `top_p`, the `top_k` is applied before.
+        top_p : float | None
+            The probability density covering the new tokens to consider for random sampling. Not used if 
+            `do_sample=False`. You can deactivate top_p sampling by providing `top_p=1` or `top_p=None`. Note 
+            that if you provide both `top_k` and `top_p`, the `top_k` is applied before.
+        temperature : float
+            How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
+            no randomness). Passing 0 is equivalent to setting `do_sample=False`.
+
+        Returns
+        -------
+        GenerationConfig
+            Config which controls the text generation.
+        """
+
+        # Setting the temperature to 0 is equivalent to greedy search thus we explicitly set do_sample=False
+        if temperature == 0:
+            do_sample = False
+
+        # Retrieve eos_token_id (note that the attribute exists in all cases)
+        if self.model.generation_config.eos_token_id is not None:
+            eos_token_id = self.model.generation_config.eos_token_id
+        elif self.model.config.eos_token_id is not None:
+            eos_token_id = self.model.config.eos_token_id
+        elif self.tokenizer.eos_token_id is not None:
+            eos_token_id = self.tokenizer.eos_token_id
+        else:
+            raise RuntimeError('Impossible to find the `eos_token_id`.')
+
+        # Retrieve bos_token_id (note that the attribute exists in all cases)
+        if self.model.generation_config.bos_token_id is not None:
+            bos_token_id = self.model.generation_config.bos_token_id
+        elif self.model.config.bos_token_id is not None:
+            bos_token_id = self.model.config.bos_token_id
+        elif self.tokenizer.bos_token_id is not None:
+            bos_token_id = self.tokenizer.bos_token_id
+        else:
+            raise RuntimeError('Impossible to find the `bos_token_id`.')
+        
+        # Retrieve pad_token_id and set it to eos_token_id if it does not exist (note that the attribute
+        # exists in all cases)
+        if self.model.generation_config.pad_token_id is not None:
+            pad_token_id = self.model.generation_config.pad_token_id
+        elif self.model.config.pad_token_id is not None:
+            pad_token_id = self.model.config.pad_token_id
+        elif self.tokenizer.pad_token_id is not None:
+            pad_token_id = self.tokenizer.pad_token_id
+        else:
+            pad_token_id = eos_token_id
+
+        # create the config
+        generation_config = GenerationConfig(eos_token_id=eos_token_id, bos_token_id=bos_token_id,
+                                             pad_token_id=pad_token_id, max_new_tokens=max_new_tokens,
+                                             min_new_tokens=min_new_tokens, do_sample=do_sample)
+        
+        # Add parameters to the config
+        if do_sample:
+            unused = generation_config.update(top_k=top_k, top_p=top_p, temperature=temperature)
+            assert len(unused) == 0, 'There is a typo in some generation config parameters.'
+
+        return generation_config
+
+
     def generate_text(
             self,
             prompt: str,
@@ -331,21 +413,16 @@ class HFModel(object):
         if seed is not None:
             utils.set_all_seeds(seed)
 
-        # Setting the temperature to 0 is equivalent to greedy search thus we explicitly set do_sample=False
-        if temperature == 0:
-            do_sample = False
+        # Override the default `self.model.generation_config` with our config to be sure of the generation mode
+        generation_config = self.create_generation_config(max_new_tokens=max_new_tokens, min_new_tokens=min_new_tokens,
+                                                          do_sample=do_sample, top_k=top_k, top_p=top_p,
+                                                          temperature=temperature)
 
-        if num_return_sequences > 1 and not do_sample:
+        if num_return_sequences > 1 and not generation_config.do_sample:
             warnings.warn(('You provided `do_sample=False` or `temperature=0`, i.e. greedy search generation, '
                            'but with `num_return_sequences>1`. All sequences will be identical with greedy search, '
                            'so we explicitly set `num_return_sequences=1`'))
             num_return_sequences = 1
-
-        if do_sample:
-            generation_kwargs = {'do_sample': do_sample, 'top_k': top_k, 'top_p': top_p, 'temperature': temperature}
-        # If we are doing greedy search, do not pass arguments that alter the model output logits to `generate`
-        else:
-            generation_kwargs = {'do_sample': do_sample}
 
         # Prompt formatting
         formatted_prompt = self.format_prompt(prompt, model_context=model_context, infill_suffix=infill_suffix,
@@ -370,9 +447,6 @@ class HFModel(object):
                                                                              stopping_patterns=stopping_patterns,
                                                                              parser=parser)
 
-        # Suppress pad_token_id warning
-        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
-
         # Infer batch size if not given
         if batch_size is None:
             batch_size = self.infer_best_batch_size(input_length, max_new_tokens, num_return_sequences)
@@ -382,12 +456,10 @@ class HFModel(object):
 
         # This will lower the batch size if needed, in case of possible OOM. This allows to continue without crashing,
         # by reducing the batch size automatically
-        first_output, batch_size = self.oom_safe_batch_generation(input, max_new_tokens=max_new_tokens,
-                                                                  min_new_tokens=min_new_tokens,
-                                                                  generation_kwargs=generation_kwargs,
-                                                                  batch_size=batch_size,
+        first_output, batch_size = self.oom_safe_batch_generation(input, generation_config=generation_config,
                                                                   stopping_criteria=stopping_criteria,
-                                                                  pad_token_id=pad_token_id, **kwargs)
+                                                                  batch_size=batch_size,
+                                                                  **kwargs)
 
         # If we require more sequences than the allowed batch size, we need to split the generation into
         # multiple passes
@@ -408,9 +480,9 @@ class HFModel(object):
             if i == 0:
                 outputs = first_output
             else:
-                outputs = self.model.generate(input, max_new_tokens=max_new_tokens, min_new_tokens=min_new_tokens,
-                                              **generation_kwargs, num_return_sequences=size,
-                                              stopping_criteria=stopping_criteria, pad_token_id=pad_token_id, **kwargs)
+                outputs = self.model.generate(input, generation_config=generation_config,
+                                              stopping_criteria=stopping_criteria, num_return_sequences=size,
+                                              **kwargs)
                 
             # Truncate the prompt from the output
             truncated_outputs = outputs[:, input_length:]
@@ -424,8 +496,8 @@ class HFModel(object):
             
             # reattach the prompt if needed
             if not truncate_prompt_from_output:
-                # generated_batch = [original_prompt + sequence for sequence in generated_batch]
-                generated_batch = [formatted_prompt + sequence for sequence in generated_batch]
+                generated_batch = [original_prompt + sequence for sequence in generated_batch]
+                # generated_batch = [formatted_prompt + sequence for sequence in generated_batch]
             
             generated_text += generated_batch
 
@@ -517,9 +589,8 @@ class HFModel(object):
         return int(available_memory // ref_batch_footprint)
 
 
-    def oom_safe_batch_generation(self, input: torch.Tensor, max_new_tokens: int, min_new_tokens: int,
-                                  generation_kwargs: dict, batch_size: int,
-                                  stopping_criteria: StoppingCriteriaList | None, pad_token_id: int,
+    def oom_safe_batch_generation(self, input: torch.Tensor, generation_config: GenerationConfig,
+                                  stopping_criteria: StoppingCriteriaList | None, batch_size: int,
                                   **kwargs) -> tuple[torch.Tensor, int]:
         """Generate text by recursively recovering from possible memory errors (OOMs) by lowering the batch size.
         Note that it is not possible to retry immediately in the except block because the exception retains the
@@ -530,9 +601,8 @@ class HFModel(object):
 
         # Try generating result
         try:
-            out = self.model.generate(input, max_new_tokens=max_new_tokens, min_new_tokens=min_new_tokens,
-                                      **generation_kwargs, num_return_sequences=batch_size,
-                                      stopping_criteria=stopping_criteria, pad_token_id=pad_token_id, **kwargs)
+            out = self.model.generate(input, generation_config=generation_config, stopping_criteria=stopping_criteria,
+                                      num_return_sequences=batch_size, **kwargs)
         
         except RuntimeError as e:
             if isinstance(e, torch.cuda.OutOfMemoryError):
@@ -547,9 +617,9 @@ class HFModel(object):
             warnings.warn(f'Reducing batch size from {batch_size} to {new_batch_size} due to memory overflow (OOM).', RuntimeWarning)
             gc.collect()
             torch.cuda.empty_cache()
-            return self.oom_safe_batch_generation(input, max_new_tokens=max_new_tokens, min_new_tokens=min_new_tokens,
-                                                  generation_kwargs=generation_kwargs, batch_size=new_batch_size,
-                                                  stopping_criteria=stopping_criteria, pad_token_id=pad_token_id, **kwargs)
+            return self.oom_safe_batch_generation(input, generation_config=generation_config,
+                                                  stopping_criteria=stopping_criteria, batch_size=new_batch_size,
+                                                  **kwargs)
         else:
             return out, batch_size
         
@@ -635,15 +705,10 @@ class HFModel(object):
         if seed is not None:
             utils.set_all_seeds(seed)
 
-        # Setting the temperature to 0 is equivalent to greedy search thus we explicitly set do_sample=False
-        if temperature == 0:
-            do_sample = False
-
-        if do_sample:
-            generation_kwargs = {'do_sample': do_sample, 'top_k': top_k, 'top_p': top_p, 'temperature': temperature}
-        # If we are doing greedy search, do not pass arguments that alter the model output logits to `generate`
-        else:
-            generation_kwargs = {'do_sample': do_sample}
+        # Override the default `self.model.generation_config` with our config to be sure of the generation mode
+        generation_config = self.create_generation_config(max_new_tokens=max_new_tokens, min_new_tokens=min_new_tokens,
+                                                          do_sample=do_sample, top_k=top_k, top_p=top_p,
+                                                          temperature=temperature)
 
         # Check that the history is not empty
         if conv_history is None:
@@ -665,12 +730,8 @@ class HFModel(object):
         # Create the stopping criteria in case the model has some extra eos tokens to process
         stopping_criteria, _ = self.create_stopping_criteria(input_length)
 
-        # Suppress pad_token_id warning
-        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
-
-        outputs = self.model.generate(input, max_new_tokens=max_new_tokens, min_new_tokens=min_new_tokens,
-                                      **generation_kwargs, num_return_sequences=1,
-                                      stopping_criteria=stopping_criteria, pad_token_id=pad_token_id, **kwargs)
+        outputs = self.model.generate(input, generation_config=generation_config, stopping_criteria=stopping_criteria,
+                                      num_return_sequences=1, **kwargs)
                 
         # Truncate the prompt from the output
         truncated_outputs = outputs[:, input_length:]

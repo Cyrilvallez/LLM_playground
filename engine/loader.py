@@ -5,6 +5,7 @@ import math
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+
 def _infer_model_size(model_name: str) -> float:
     """Return the number of parameters a model has from its name if it can be inferred from it. Raise a 
     ValueError otherwise.
@@ -52,6 +53,85 @@ def _infer_model_sizes(name_mapping: dict[str, str]) -> dict[str, float]:
 
     return {key: _infer_model_size(key) for key in name_mapping.keys()}
 
+
+def _map_to_dtype(models_mapping: dict[str, str], dtype: torch.dtype) -> dict[str, torch.dtype]:
+    """Map each model name (keys of `models_mapping`) to the same default `dtype` for loading.
+
+    Parameters
+    ----------
+    models_mapping : dict[str, str]
+        Models name mapping.
+    dtype : torch.dtype
+        The dtype to use for each model.
+
+    Returns
+    -------
+    dict[str, torch.dtype]
+        Mapping from individual model name to its default dtype.
+    """
+    
+    return {key: dtype for key in models_mapping.keys()}
+
+
+def _map_to_model_family(models_mapping: dict[str, str], family_name: str) -> dict[str, str]:
+    """Map each model name (keys of `models_mapping`) to the same `family_name`.
+
+    Parameters
+    ----------
+    models_mapping : dict[str, str]
+        Models name mapping.
+    family_name : str
+        The family name to give to each model.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from individual model name to its family.
+    """
+    
+    return {key: family_name for key in models_mapping.keys()}
+
+
+def _register_model(model_name: str):
+    """Register a model into the global variables containing all models parameters.
+
+    Parameters
+    ----------
+    model_name : str
+        Name (prefix in uppercase) of the model.
+    """
+
+    # Protect against injections (any character except digits, uppercases and underscore are detected)
+    if re.search(r'[^A-Z0-9_]', model_name):
+        raise ValueError('Cannot register a model with a name containing special or lowercase characters.')
+
+    required_suffixes = ('MODELS_MAPPING', 'MODELS_DTYPES', 'MODELS_PARAMS', 'MODELS_FAMILY')
+    optional_suffixes = ('MODELS_ADDITIONAL_MODEL_KWARGS', 'MODELS_ADDITIONAL_TOKENIZER_KWARGS')
+
+    # Template string to `exec` in order to merge the dictionaries
+    template = 'ALL_{suffix}.update({model_name}_{suffix})'
+
+    for suffix in required_suffixes:
+        code = template.format(suffix=suffix, model_name=model_name)
+        exec(code)
+
+    for suffix in optional_suffixes:
+        try:
+            code = template.format(suffix=suffix, model_name=model_name)
+            exec(code)
+        # In this case the optional variable is not present
+        except NameError:
+            pass
+
+
+    
+# Those will be updated with each call to _register_model()
+ALL_MODELS_MAPPING = {}
+ALL_MODELS_DTYPES = {}
+ALL_MODELS_PARAMS = {}
+ALL_MODELS_FAMILY = {}
+ALL_MODELS_ADDITIONAL_MODEL_KWARGS = {}
+ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {}
     
 
 # Pretrained bloom models
@@ -70,6 +150,8 @@ BLOOM_MODELS_DTYPES = {
     'bloom-176B': torch.bfloat16,
 }
 BLOOM_MODELS_PARAMS = _infer_model_sizes(BLOOM_MODELS_MAPPING)
+BLOOM_MODELS_FAMILY = _map_to_model_family(BLOOM_MODELS_MAPPING, 'bloom')
+_register_model('BLOOM')
 
 
 # Pretrained Dialo-GPT models
@@ -78,27 +160,26 @@ DIALO_GPT_MODELS_MAPPING = {
     'dialo-gpt-medium': 'microsoft/DialoGPT-medium',
     'dialo-gpt-large': 'microsoft/DialoGPT-large',
 }
-DIALO_GPT_MODELS_DTYPES = {
-    'dialo-gpt-small': torch.float32,
-    'dialo-gpt-medium': torch.float32,
-    'dialo-gpt-large': torch.float32,
-}
+DIALO_GPT_MODELS_DTYPES = _map_to_dtype(DIALO_GPT_MODELS_MAPPING, torch.float32)
 DIALO_GPT_MODELS_PARAMS = {
     'dialo-gpt-small': 125/1e3,
     'dialo-gpt-medium': 355/1e3,
     'dialo-gpt-large': 775/1e3,
 }
+DIALO_GPT_MODELS_FAMILY = _map_to_model_family(DIALO_GPT_MODELS_MAPPING, 'dialo-gpt')
+_register_model('DIALO_GPT')
+
 
 # Pretrained StableLM models
 STABLE_LM_MODELS_MAPPING = {
     'stable-lm-3B': 'stabilityai/stablelm-base-alpha-3b',
     'stable-lm-7B': 'stabilityai/stablelm-base-alpha-7b',
 }
-STABLE_LM_MODELS_DTYPES = {
-    'stable-lm-3B': torch.float16,
-    'stable-lm-7B': torch.float16,
-}
+STABLE_LM_MODELS_DTYPES = _map_to_dtype(STABLE_LM_MODELS_MAPPING, torch.float16)
 STABLE_LM_MODELS_PARAMS = _infer_model_sizes(STABLE_LM_MODELS_MAPPING)
+STABLE_LM_MODELS_FAMILY = _map_to_model_family(STABLE_LM_MODELS_MAPPING, 'stable-lm')
+_register_model('STABLE_LM')
+
 
 # Pretrained StarCoder models
 STAR_CODER_MODELS_MAPPING = {
@@ -108,19 +189,17 @@ STAR_CODER_MODELS_MAPPING = {
     # Star-coder-based further trained on English data
     'star-coder-plus': 'bigcode/starcoderplus',
 }
-STAR_CODER_MODELS_DTYPES = {
-    'star-coder-base': torch.bfloat16,
-    'star-coder': torch.bfloat16,
-    'star-coder-plus': torch.bfloat16,
-}
+STAR_CODER_MODELS_DTYPES = _map_to_dtype(STAR_CODER_MODELS_MAPPING, torch.bfloat16)
 STAR_CODER_MODELS_PARAMS = {
     'star-coder-base': 15.5,
     'star-coder': 15.5,
     'star-coder-plus': 15.5,
 }
-STAR_CODER_ADDITIONAL_MODEL_KWARGS = {
+STAR_CODER_MODELS_FAMILY = _map_to_model_family(STAR_CODER_MODELS_MAPPING, 'star-coder')
+STAR_CODER_MODELS_ADDITIONAL_MODEL_KWARGS = {
     'star-coder-base': {'trust_remote_code': True},
 }
+_register_model('STAR_CODER')
 
 
 # Pretrained Star-chat models
@@ -136,6 +215,8 @@ STAR_CHAT_MODELS_PARAMS = {
     'star-chat-alpha': 16,
     'star-chat-beta': 16,
 }
+STAR_CHAT_MODELS_FAMILY = _map_to_model_family(STAR_CHAT_MODELS_MAPPING, 'star-chat')
+_register_model('STAR_CHAT')
 
 
 # Pretrained GPT-2 models
@@ -144,16 +225,14 @@ GPT2_MODELS_MAPPING = {
     'gpt2-large': 'gpt2-large',
     'gpt2-xl': 'gpt2-xl',
 }
-GPT2_MODELS_DTYPES = {
-    'gpt2-medium': torch.float32,
-    'gpt2-large': torch.float32,
-    'gpt2-xl': torch.float32,
-}
+GPT2_MODELS_DTYPES = _map_to_dtype(GPT2_MODELS_MAPPING, torch.float32)
 GPT2_MODELS_PARAMS = {
     'gpt2-medium': 355/1e3,
     'gpt2-large': 774/1e3,
     'gpt2-xl': 1.5,
 }
+GPT2_MODELS_FAMILY = _map_to_model_family(GPT2_MODELS_MAPPING, 'gpt2')
+_register_model('GPT2')
 
 
 # Pretrained GPT-J and GPT-Neo models
@@ -172,6 +251,14 @@ GPT_J_AND_NEO_MODELS_DTYPES = {
     'gpt-neoX-20B': torch.float16,
 }
 GPT_J_AND_NEO_MODELS_PARAMS = _infer_model_sizes(GPT_J_AND_NEO_MODELS_MAPPING)
+GPT_J_AND_NEO_MODELS_FAMILY = {
+    'gpt-j-6B': 'gpt-j',
+    'gpt-neo-125M': 'gpt-neo',
+    'gpt-neo-1.3B': 'gpt-neo',
+    'gpt-neo-2.7B': 'gpt-neo',
+    'gpt-neoX-20B': 'gpt-neo',
+}
+_register_model('GPT_J_AND_NEO')
 
 
 # Pretrained OPT models
@@ -185,17 +272,10 @@ OPT_MODELS_MAPPING = {
     'opt-30B': 'facebook/opt-30b',
     'opt-66B': 'facebook/opt-66b',
 }
-OPT_MODELS_DTYPES = {
-    'opt-125M': torch.float16,
-    'opt-350M': torch.float16,
-    'opt-1.3B': torch.float16,
-    'opt-2.7B': torch.float16,
-    'opt-6.7B': torch.float16,
-    'opt-13B': torch.float16,
-    'opt-30B': torch.float16,
-    'opt-66B': torch.float16,
-}
+OPT_MODELS_DTYPES = _map_to_dtype(OPT_MODELS_MAPPING, torch.float16)
 OPT_MODELS_PARAMS = _infer_model_sizes(OPT_MODELS_MAPPING)
+OPT_MODELS_FAMILY = _map_to_model_family(OPT_MODELS_MAPPING, 'opt')
+_register_model('OPT')
 
 
 # Pretrained CodeGEN models
@@ -205,13 +285,10 @@ CODEGEN_MODELS_MAPPING = {
     'codegen-6B': 'Salesforce/codegen-6B-mono',
     'codegen-16B': 'Salesforce/codegen-16B-mono',
 }
-CODEGEN_MODELS_DTYPES = {
-    'codegen-350M': torch.float16,
-    'codegen-2B': torch.float16,
-    'codegen-6B': torch.float16,
-    'codegen-16B': torch.float16,
-}
+CODEGEN_MODELS_DTYPES = _map_to_dtype(CODEGEN_MODELS_MAPPING, torch.float16)
 CODEGEN_MODELS_PARAMS = _infer_model_sizes(CODEGEN_MODELS_MAPPING)
+CODEGEN_MODELS_FAMILY = _map_to_model_family(CODEGEN_MODELS_MAPPING, 'codegen')
+_register_model('CODEGEN')
 
 
 # Pretrained CodeGEN2 models
@@ -223,25 +300,27 @@ CODEGEN2_MODELS_MAPPING = {
     'codegen25-7B': 'Salesforce/codegen25-7B-mono',
     'codegen25-7B-instruct': 'Salesforce/codegen25-7b-instruct',
 }
-CODEGEN2_MODELS_DTYPES = {
-    'codegen2-1B': torch.float16,
-    'codegen2-3.7B': torch.float16,
-    'codegen2-7B': torch.float16,
-    'codegen2-16B': torch.float16,
-    'codegen25-7B': torch.float16,
-    'codegen25-7B-instruct': torch.float16,
-}
+CODEGEN2_MODELS_DTYPES = _map_to_dtype(CODEGEN2_MODELS_MAPPING, torch.float16)
 CODEGEN2_MODELS_PARAMS = _infer_model_sizes(CODEGEN2_MODELS_MAPPING)
-CODEGEN2_ADDITIONAL_MODEL_KWARGS = {
+CODEGEN2_MODELS_FAMILY = {
+    'codegen2-1B': 'codegen2',
+    'codegen2-3.7B': 'codegen2',
+    'codegen2-7B': 'codegen2',
+    'codegen2-16B': 'codegen2',
+    'codegen25-7B': 'codegen2.5',
+    'codegen25-7B-instruct': 'codegen2.5',
+}
+CODEGEN2_MODELS_ADDITIONAL_MODEL_KWARGS = {
     'codegen2-1B': {'trust_remote_code': True, 'revision': 'main'},
     'codegen2-3.7B': {'trust_remote_code': True, 'revision': 'main'},
     'codegen2-7B': {'trust_remote_code': True, 'revision': 'main'},
     'codegen2-16B': {'trust_remote_code': True, 'revision': 'main'},
 }
-CODEGEN2_ADDITIONAL_TOKENIZER_KWARGS = {
+CODEGEN2_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {
     'codegen25-7B': {'trust_remote_code': True},
     'codegen25-7B-instruct': {'trust_remote_code': True},
 }
+_register_model('CODEGEN2')
 
 
 # Pretrained Vicuna (1.3) models
@@ -249,17 +328,17 @@ VICUNA_MODELS_MAPPING = {
     'vicuna-7B': 'lmsys/vicuna-7b-v1.3',
     'vicuna-13B': 'lmsys/vicuna-13b-v1.3',
 }
-VICUNA_MODELS_DTYPES = {
-    'vicuna-7B': torch.float16,
-    'vicuna-13B': torch.float16,
-}
+VICUNA_MODELS_DTYPES = _map_to_dtype(VICUNA_MODELS_MAPPING, torch.float16)
 VICUNA_MODELS_PARAMS = _infer_model_sizes(VICUNA_MODELS_MAPPING)
+VICUNA_MODELS_FAMILY = _map_to_model_family(VICUNA_MODELS_MAPPING, 'vicuna1.3')
 # Fast tokenizers and non-legacy behaviour are bugged in current transformers and tokenizers versions
 # TODO: may need to be changed in future versions if they correct the bug
-VICUNA_ADDITIONAL_TOKENIZER_KWARGS = {
+VICUNA_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {
     'vicuna-7B': {'use_fast_tokenizer': False, 'legacy':True},
     'vicuna-13B': {'use_fast_tokenizer': False, 'legacy':True},
 }
+_register_model('VICUNA')
+
 
 # Pretrained llama-2 models
 LLAMA2_MODELS_MAPPING = {
@@ -270,18 +349,12 @@ LLAMA2_MODELS_MAPPING = {
     'llama2-13B-chat': 'meta-llama/Llama-2-13b-chat-hf',
     'llama2-70B-chat': 'meta-llama/Llama-2-70b-chat-hf',
 }
-LLAMA2_MODELS_DTYPES = {
-    'llama2-7B': torch.float16,
-    'llama2-13B': torch.float16,
-    'llama2-70B': torch.float16,
-    'llama2-7B-chat': torch.float16,
-    'llama2-13B-chat': torch.float16,
-    'llama2-70B-chat': torch.float16,
-}
+LLAMA2_MODELS_DTYPES = _map_to_dtype(LLAMA2_MODELS_MAPPING, torch.float16)
 LLAMA2_MODELS_PARAMS = _infer_model_sizes(LLAMA2_MODELS_MAPPING)
+LLAMA2_MODELS_FAMILY = _map_to_model_family(LLAMA2_MODELS_MAPPING, 'llama2')
 # Fast tokenizers and non-legacy behaviour are bugged in current transformers and tokenizers versions
 # TODO: may need to be changed in future versions if they correct the bug
-LLAMA2_ADDITIONAL_TOKENIZER_KWARGS = {
+LLAMA2_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {
     'llama2-7B': {'use_fast_tokenizer': False, 'legacy':True},
     'llama2-13B': {'use_fast_tokenizer': False, 'legacy':True},
     'llama2-70B': {'use_fast_tokenizer': False, 'legacy':True},
@@ -289,60 +362,26 @@ LLAMA2_ADDITIONAL_TOKENIZER_KWARGS = {
     'llama2-13B-chat': {'use_fast_tokenizer': False, 'legacy':True},
     'llama2-70B-chat': {'use_fast_tokenizer': False, 'legacy':True},
 }
+_register_model('LLAMA2')
 
 
-# Decoder-based models
-ALL_MODELS_MAPPING = {
-    **BLOOM_MODELS_MAPPING,
-    **DIALO_GPT_MODELS_MAPPING,
-    **STABLE_LM_MODELS_MAPPING,
-    **STAR_CODER_MODELS_MAPPING,
-    **STAR_CHAT_MODELS_MAPPING,
-    **GPT2_MODELS_MAPPING,
-    **GPT_J_AND_NEO_MODELS_MAPPING,
-    **OPT_MODELS_MAPPING,
-    **CODEGEN_MODELS_MAPPING,
-    **CODEGEN2_MODELS_MAPPING,
-    **VICUNA_MODELS_MAPPING,
-    **LLAMA2_MODELS_MAPPING,
+# Code-Llama models (based on llama2 models)
+CODE_LLAMA_MODELS_MAPPING = {
+    'code-llama-7B': 'codellama/CodeLlama-7b-hf',
+    'code-llama-13B': 'codellama/CodeLlama-13b-hf',
+    'code-llama-34B': 'codellama/CodeLlama-34b-hf',
+    'code-llama-7B-python': 'codellama/CodeLlama-7b-Python-hf',
+    'code-llama-13B-python': 'codellama/CodeLlama-13b-Python-hf',
+    'code-llama-34B-python': 'codellama/CodeLlama-34b-Python-hf',
+    'code-llama-7B-instruct': 'codellama/CodeLlama-7b-Instruct-hf',
+    'code-llama-13B-instruct': 'codellama/CodeLlama-13b-Instruct-hf',
+    'code-llama-34B-instruct': 'codellama/CodeLlama-34b-Instruct-hf',
 }
-ALL_MODELS_DTYPES_MAPPING = {
-    **BLOOM_MODELS_DTYPES,
-    **DIALO_GPT_MODELS_DTYPES,
-    **STABLE_LM_MODELS_DTYPES,
-    **STAR_CODER_MODELS_DTYPES,
-    **STAR_CHAT_MODELS_DTYPES,
-    **GPT2_MODELS_DTYPES,
-    **GPT_J_AND_NEO_MODELS_DTYPES,
-    **OPT_MODELS_DTYPES,
-    **CODEGEN_MODELS_DTYPES,
-    **CODEGEN2_MODELS_DTYPES,
-    **VICUNA_MODELS_DTYPES,
-    **LLAMA2_MODELS_DTYPES,
-}
-ALL_MODELS_PARAMS_MAPPING = {
-    **BLOOM_MODELS_PARAMS,
-    **DIALO_GPT_MODELS_PARAMS,
-    **STABLE_LM_MODELS_PARAMS,
-    **STAR_CODER_MODELS_PARAMS,
-    **STAR_CHAT_MODELS_PARAMS,
-    **GPT2_MODELS_PARAMS,
-    **GPT_J_AND_NEO_MODELS_PARAMS,
-    **OPT_MODELS_PARAMS,
-    **CODEGEN_MODELS_PARAMS,
-    **CODEGEN2_MODELS_PARAMS,
-    **VICUNA_MODELS_PARAMS,
-    **LLAMA2_MODELS_PARAMS,
-}
-ALL_MODELS_ADDITIONAL_MODEL_KWARGS_MAPPING = {
-    **STAR_CODER_ADDITIONAL_MODEL_KWARGS,
-    **CODEGEN2_ADDITIONAL_MODEL_KWARGS,
-}
-ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS_MAPPING = {
-    **CODEGEN2_ADDITIONAL_TOKENIZER_KWARGS,
-    **VICUNA_ADDITIONAL_TOKENIZER_KWARGS,
-    **LLAMA2_ADDITIONAL_TOKENIZER_KWARGS,
-}
+CODE_LLAMA_MODELS_DTYPES = _map_to_dtype(CODE_LLAMA_MODELS_MAPPING, torch.bfloat16)
+CODE_LLAMA_MODELS_PARAMS = _infer_model_sizes(CODE_LLAMA_MODELS_MAPPING)
+CODE_LLAMA_MODELS_FAMILY = _map_to_model_family(CODE_LLAMA_MODELS_MAPPING, 'code-llama')
+_register_model('CODE_LLAMA')
+
 
 
 
@@ -370,7 +409,7 @@ def get_model_params(model_name: str) -> float:
     if model_name not in ALLOWED_MODELS:
         raise ValueError(f'The model name must be one of {*ALLOWED_MODELS,}.')
     
-    return ALL_MODELS_PARAMS_MAPPING[model_name]
+    return ALL_MODELS_PARAMS[model_name]
 
 
 def get_model_dtype(model_name: str) -> torch.dtype:
@@ -390,7 +429,7 @@ def get_model_dtype(model_name: str) -> torch.dtype:
     if model_name not in ALLOWED_MODELS:
         raise ValueError(f'The model name must be one of {*ALLOWED_MODELS,}.')
     
-    return ALL_MODELS_DTYPES_MAPPING[model_name]
+    return ALL_MODELS_DTYPES[model_name]
 
 
 def estimate_model_gpu_footprint(model_name, quantization_8bits: bool = False, quantization_4bits: bool = False,
@@ -426,8 +465,8 @@ def estimate_model_gpu_footprint(model_name, quantization_8bits: bool = False, q
     if max_fraction_gpu_0 < 0 or max_fraction_gpus < 0:
         raise ValueError('The maximum fraction of gpu memory to use cannot be negative.')
     
-    if max_fraction_gpu_0 > 0.85 or max_fraction_gpus > 0.85:
-        raise ValueError(('The maximum fraction of gpu memory to use cannot be larger than 0.85 because some '
+    if max_fraction_gpu_0 > 0.9 or max_fraction_gpus > 0.9:
+        raise ValueError(('The maximum fraction of gpu memory to use cannot be larger than 0.9 because some '
                          'memory need to stay free for the forward pass and other computations.'))
     
     # Silently use 4bits when both are True
@@ -448,7 +487,7 @@ def estimate_model_gpu_footprint(model_name, quantization_8bits: bool = False, q
         size_multiplier = 4
 
     # Estimate of the memory size of the model
-    rough_model_size_estimate = ALL_MODELS_PARAMS_MAPPING[model_name] * size_multiplier
+    rough_model_size_estimate = ALL_MODELS_PARAMS[model_name] * size_multiplier
     
     # We assume that we always have identical gpus when using multiple gpus
     gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
@@ -524,7 +563,7 @@ def load_model(model_name: str, quantization_8bits: bool = False, quantization_4
     
     # Set the dtype if not provided
     if dtype is None:
-        dtype = ALL_MODELS_DTYPES_MAPPING[model_name]
+        dtype = ALL_MODELS_DTYPES[model_name]
 
     if dtype not in ALLOWED_DTYPES:
         raise ValueError(f'The dtype must be one of {*ALLOWED_DTYPES,}.')
@@ -555,8 +594,8 @@ def load_model(model_name: str, quantization_8bits: bool = False, quantization_4
     dtype = torch.float16 if quantization else dtype
 
     # Add possible additional kwargs
-    if model_name in ALL_MODELS_ADDITIONAL_MODEL_KWARGS_MAPPING.keys():
-        additional_kwargs = ALL_MODELS_ADDITIONAL_MODEL_KWARGS_MAPPING[model_name]
+    if model_name in ALL_MODELS_ADDITIONAL_MODEL_KWARGS.keys():
+        additional_kwargs = ALL_MODELS_ADDITIONAL_MODEL_KWARGS[model_name]
     else:
         additional_kwargs = {}
 
@@ -636,8 +675,8 @@ def load_tokenizer(model_name: str):
     if model_name not in ALLOWED_MODELS:
         raise ValueError(f'The model name must be one of {*ALLOWED_MODELS,}.') 
     
-    if model_name in ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS_MAPPING.keys():
-        additional_kwargs = ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS_MAPPING[model_name]
+    if model_name in ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS.keys():
+        additional_kwargs = ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS[model_name]
     else:
         additional_kwargs = {}
     

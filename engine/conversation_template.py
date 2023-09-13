@@ -144,7 +144,7 @@ class GenericConversation(object):
         return [list(conv_turn) for conv_turn in self]
         
 
-
+# reference: https://huggingface.co/spaces/HuggingFaceH4/starchat-playground/blob/main/dialogues.py
 class StarChatConversation(GenericConversation):
 
     def __init__(self, eos_token: str):
@@ -178,7 +178,7 @@ class StarChatConversation(GenericConversation):
         return prompt
     
 
-
+# reference: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py#L334
 class VicunaConversation(GenericConversation):
 
     def __init__(self, eos_token: str):
@@ -209,7 +209,7 @@ class VicunaConversation(GenericConversation):
         return prompt
     
 
-
+# reference: https://github.com/facebookresearch/llama/blob/1a240688810f8036049e8da36b073f63d2ac552c/llama/generation.py#L212
 class Llama2ChatConversation(GenericConversation):
 
     def __init__(self, eos_token: str):
@@ -227,7 +227,7 @@ class Llama2ChatConversation(GenericConversation):
         """Format the prompt representing the conversation that we will feed to the tokenizer.
         """
 
-        system_prompt = self.system_template.format(system_prompt=self.system_prompt)
+        system_prompt = self.system_template.format(system_prompt=self.system_prompt.strip())
         prompt = ''
 
         for i, (user_message, model_response) in enumerate(self):
@@ -235,11 +235,11 @@ class Llama2ChatConversation(GenericConversation):
             if i == 0:
                 # Do not add bos_token here as it will be added automatically at the start of the prompt by 
                 # the tokenizer 
-                prompt += self.user_token + ' ' + system_prompt + user_message + ' '
+                prompt += self.user_token + ' ' + system_prompt + user_message.strip() + ' '
             else:
-                prompt += self.bos_token + self.user_token + ' ' + user_message + ' '
+                prompt += self.bos_token + self.user_token + ' ' + user_message.strip() + ' '
             if model_response is not None:
-                prompt += self.assistant_token + ' ' + model_response + ' ' + self.eos_token
+                prompt += self.assistant_token + ' ' + model_response.strip() + ' ' + self.eos_token
             else:
                 prompt += self.assistant_token
 
@@ -261,6 +261,11 @@ CONVERSATION_MAPPING = {
     'llama2-7B-chat': Llama2ChatConversation,
     'llama2-13B-chat': Llama2ChatConversation,
     'llama2-70B-chat': Llama2ChatConversation,
+
+    # Code-llama-instruct
+    'code-llama-7B-instruct': Llama2ChatConversation,
+    'code-llama-13B-instruct': Llama2ChatConversation,
+    'code-llama-34B-instruct': Llama2ChatConversation,
 }
 
 

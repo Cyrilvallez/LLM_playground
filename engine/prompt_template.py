@@ -153,7 +153,7 @@ class GenericPromptTemplate(object):
         self.mode = mode
     
 
-
+# DialoGPT template: https://huggingface.co/microsoft/DialoGPT-medium?text=Hey+my+name+is+Mariama%21+How+are+you%3F
 class DialoGPTPromptTemplate(GenericPromptTemplate):
 
     def __init__(self, mode: str = 'default'):
@@ -169,7 +169,7 @@ class DialoGPTPromptTemplate(GenericPromptTemplate):
         return prompt + model_context + self.eos_token
     
 
-
+# StarCoder template: https://huggingface.co/bigcode/starcoder
 class StarCoderPromptTemplate(GenericPromptTemplate):
 
     def __init__(self, mode: str = 'default'):
@@ -210,7 +210,7 @@ class StarChatPromptTemplate(GenericPromptTemplate):
             + prompt + self.sep_token + '\n' + self.assistant_token + '\n' + model_context
     
 
-
+# Codegen2 template: https://huggingface.co/Salesforce/codegen2-3_7B
 class Codegen2PromptTemplate(GenericPromptTemplate):
 
     def __init__(self, mode: str = 'default'):
@@ -316,6 +316,11 @@ PROMPT_MAPPING = {
     'llama2-7B-chat': Llama2ChatPromptTemplate,
     'llama2-13B-chat': Llama2ChatPromptTemplate,
     'llama2-70B-chat': Llama2ChatPromptTemplate,
+
+    # Code-llama-instruct
+    'code-llama-7B-instruct': Llama2ChatPromptTemplate,
+    'code-llama-13B-instruct': Llama2ChatPromptTemplate,
+    'code-llama-34B-instruct': Llama2ChatPromptTemplate,
 }
 
 

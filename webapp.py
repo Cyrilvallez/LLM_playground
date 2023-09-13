@@ -1,9 +1,13 @@
 import gc
 import os
 import argparse
+import queue
+import copy
+from concurrent.futures import ThreadPoolExecutor
 
 import torch
 import gradio as gr
+from transformers import TextIteratorStreamer
 
 import engine
 from engine import loader
@@ -64,10 +68,9 @@ def update_model(model_name: str, quantization_8bits: bool = False, quantization
     return '', '', '', [[None, None]]
 
 
-
 def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = True, top_k: int = 50,
-                    top_p: float = 0.90, temperature: float = 0.9, num_return_sequences: int = 1,
-                    use_seed: bool = False, seed: int | None = None) -> str:
+                    top_p: float = 0.90, temperature: float = 0.9, use_seed: bool = False,
+                    seed: int | None = None) -> str:
     """Text generation using the model and tokenizer in the global scope, so that we can reuse them for multiple
     prompts.
 
@@ -86,8 +89,6 @@ def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     temperature : float, optional
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
         no randomness), by default 0.9.
-    num_return_sequences : int, optional
-        How many sequences to generate according to the `prompt`, by default 1.
     use_seed : bool, optional
         Whether to use a fixed seed for reproducibility, by default False.
     seed : Union[None, int], optional
@@ -95,23 +96,44 @@ def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     Returns
     -------
     str
-        String containing all `num_return_sequences` sequences generated.
+        String containing the sequence generated.
     """
     
     if not use_seed:
         seed = None
 
-    try:
-        predictions = model(prompt, max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                            temperature=temperature, num_return_sequences=num_return_sequences, seed=seed,
-                            truncate_prompt_from_output=True)
-    except BaseException as e:
-        raise gr.Error(f'The following error happened during generation: {repr(e)}')
+    timeout = 10
+
+    # To show text as it is being generated
+    streamer = TextIteratorStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
+
+    # We need to launch a new thread to get text from the streamer in real-time as it is being generated. We
+    # use an executor because it makes it easier to catch possible exceptions
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(model.generate_text, prompt, max_new_tokens=max_new_tokens, do_sample=do_sample,
+                                 top_k=top_k, top_p=top_p, temperature=temperature, seed=seed,
+                                 truncate_prompt_from_output=True, streamer=streamer)
     
-    if num_return_sequences > 1:
-        return utils.format_output(predictions)
-    else:
-        return predictions
+        # Get results from the streamer and yield it
+        try:
+            # Ask the streamer to skip prompt and reattach it here to avoid showing special prompt formatting
+            generated_text = prompt
+            for new_text in streamer:
+                generated_text += new_text
+                yield generated_text
+
+        # If for some reason the queue (from the streamer) is still empty after timeout, we probably
+        # encountered an exception
+        except queue.Empty:
+            e = future.exception()
+            if e is not None:
+                raise gr.Error(f'The following error happened during generation: {repr(e)}')
+            else:
+                raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
+    
+        # Get actual result and yield it (which may be slightly different due to postprocessing)
+        generated_text = future.result()
+        yield prompt + generated_text
 
 
 
@@ -149,18 +171,46 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     
     if not use_seed:
         seed = None
+
+    timeout = 10
+
+    # To show text as it is being generated
+    streamer = TextIteratorStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
+
+    conv_copy = copy.deepcopy(conversation)
+    conv_copy.append_user_message(prompt)
     
-    # This will update the global conversation in-place
-    try:
-        _ = model.generate_conversation(prompt, conv_history=conversation, max_new_tokens=max_new_tokens,
-                                        do_sample=do_sample, top_k=top_k, top_p=top_p, temperature=temperature,
-                                        seed=seed)
-    except BaseException as e:
-        raise gr.Error(f'The following error happened during generation: {repr(e)}')
+    # We need to launch a new thread to get text from the streamer in real-time as it is being generated. We
+    # use an executor because it makes it easier to catch possible exceptions
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        # This will update `conversation` in-place
+        future = executor.submit(model.generate_conversation, prompt, conv_history=conversation,
+                                 max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
+                                 temperature=temperature, seed=seed, streamer=streamer)
+        
+        # Get results from the streamer and yield it
+        try:
+            generated_text = ''
+            for new_text in streamer:
+                generated_text += new_text
+                # Update model answer (on a copy of the conversation) as it is being generated
+                conv_copy.model_history_text[-1] = generated_text
+                # The first output is an empty string to clear the input box, the second is the format output
+                # to use in a gradio chatbot component
+                yield '', conv_copy.to_gradio_format()
+
+        # If for some reason the queue (from the streamer) is still empty after timeout, we probably
+        # encountered an exception
+        except queue.Empty:
+            e = future.exception()
+            if e is not None:
+                raise gr.Error(f'The following error happened during generation: {repr(e)}')
+            else:
+                raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
     
-    # The first output is an empty string to clear the input box, the second is the format output to use in a
-    # gradio chatbot component
-    return '', conversation.to_gradio_format()
+    
+    # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
+    yield '', conversation.to_gradio_format()
 
 
 
@@ -219,7 +269,6 @@ top_p = gr.Slider(0, 1, value=0.90, step=0.01, label='Top-p',
               info='Probability density threshold for new tokens.')
 temperature = gr.Slider(0, 1, value=0.9, step=0.01, label='Temperature',
                         info='How to cool down the probability distribution.')
-num_return_sequence = gr.Slider(1, 10, value=1, step=1, label='Sequence', info='Number of sequence to generate.')
 use_seed = gr.Checkbox(value=False, label='Use seed', info='Whether to use a fixed seed for reproducibility.')
 seed = gr.Number(0, label='Seed', info='Seed for reproducibility.', precision=0)
 load_button = gr.Button('Load model', variant='primary')
@@ -238,7 +287,7 @@ clear_button_chat = gr.Button('Clear conversation')
 
 # Define the inputs for the main inference
 inputs_to_simple_generation = [prompt_text, max_new_tokens, do_sample, top_k, top_p, temperature,
-                               num_return_sequence, use_seed, seed]
+                               use_seed, seed]
 inputs_to_chatbot = [prompt_chat, max_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
 
 # Define inputs for the logging callbacks
@@ -319,7 +368,6 @@ with demo:
                     top_p.render()
                 with gr.Row():
                     temperature.render()
-                    num_return_sequence.render()
                 with gr.Row():
                     use_seed.render()
                     seed.render()
@@ -353,7 +401,7 @@ with demo:
 
     # Change visibility of generation parameters if we perform greedy search
     do_sample.input(lambda value: [gr.update(visible=value) for _ in range(6)], inputs=do_sample,
-                    outputs=[top_k, top_p, temperature, num_return_sequence, use_seed, seed])
+                    outputs=[top_k, top_p, temperature, use_seed, seed])
     
 
 if __name__ == '__main__':
