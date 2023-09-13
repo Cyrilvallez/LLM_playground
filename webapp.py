@@ -264,9 +264,9 @@ max_new_tokens = gr.Slider(10, 1000, value=250, step=10, label='Max new tokens',
 do_sample = gr.Checkbox(value=True, label='Sampling', info=('Whether to incorporate randomness in generation. '
                                                             'If not selected, perform greedy search.'))
 top_k = gr.Slider(0, 200, value=50, step=5, label='Top-k',
-               info='How many tokens with max probability to consider.')
+               info='How many tokens with max probability to consider. 0 to deactivate.')
 top_p = gr.Slider(0, 1, value=0.90, step=0.01, label='Top-p',
-              info='Probability density threshold for new tokens.')
+              info='Probability density threshold for new tokens. 1 to deactivate.')
 temperature = gr.Slider(0, 1, value=0.9, step=0.01, label='Temperature',
                         info='How to cool down the probability distribution.')
 use_seed = gr.Checkbox(value=False, label='Use seed', info='Whether to use a fixed seed for reproducibility.')
