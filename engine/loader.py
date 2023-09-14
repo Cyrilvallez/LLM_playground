@@ -150,6 +150,7 @@ BLOOM_MODELS_DTYPES = {
     'bloom-176B': torch.bfloat16,
 }
 BLOOM_MODELS_PARAMS = _infer_model_sizes(BLOOM_MODELS_MAPPING)
+BLOOM_MODELS_PARAMS['bloom-176B'] = 190
 BLOOM_MODELS_FAMILY = _map_to_model_family(BLOOM_MODELS_MAPPING, 'bloom')
 _register_model('BLOOM')
 
@@ -331,12 +332,9 @@ VICUNA_MODELS_MAPPING = {
 VICUNA_MODELS_DTYPES = _map_to_dtype(VICUNA_MODELS_MAPPING, torch.float16)
 VICUNA_MODELS_PARAMS = _infer_model_sizes(VICUNA_MODELS_MAPPING)
 VICUNA_MODELS_FAMILY = _map_to_model_family(VICUNA_MODELS_MAPPING, 'vicuna1.3')
-# Fast tokenizers and non-legacy behaviour are bugged in current transformers and tokenizers versions
+# Fast llama tokenizers are buggy in current transformers versions
 # TODO: may need to be changed in future versions if they correct the bug
-VICUNA_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {
-    'vicuna-7B': {'use_fast_tokenizer': False, 'legacy':True},
-    'vicuna-13B': {'use_fast_tokenizer': False, 'legacy':True},
-}
+VICUNA_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in VICUNA_MODELS_MAPPING.keys()}
 _register_model('VICUNA')
 
 
@@ -352,16 +350,9 @@ LLAMA2_MODELS_MAPPING = {
 LLAMA2_MODELS_DTYPES = _map_to_dtype(LLAMA2_MODELS_MAPPING, torch.float16)
 LLAMA2_MODELS_PARAMS = _infer_model_sizes(LLAMA2_MODELS_MAPPING)
 LLAMA2_MODELS_FAMILY = _map_to_model_family(LLAMA2_MODELS_MAPPING, 'llama2')
-# Fast tokenizers and non-legacy behaviour are bugged in current transformers and tokenizers versions
+# Fast llama tokenizers are buggy in current transformers versions
 # TODO: may need to be changed in future versions if they correct the bug
-LLAMA2_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {
-    'llama2-7B': {'use_fast_tokenizer': False, 'legacy':True},
-    'llama2-13B': {'use_fast_tokenizer': False, 'legacy':True},
-    'llama2-70B': {'use_fast_tokenizer': False, 'legacy':True},
-    'llama2-7B-chat': {'use_fast_tokenizer': False, 'legacy':True},
-    'llama2-13B-chat': {'use_fast_tokenizer': False, 'legacy':True},
-    'llama2-70B-chat': {'use_fast_tokenizer': False, 'legacy':True},
-}
+LLAMA2_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in LLAMA2_MODELS_MAPPING.keys()}
 _register_model('LLAMA2')
 
 
@@ -380,6 +371,9 @@ CODE_LLAMA_MODELS_MAPPING = {
 CODE_LLAMA_MODELS_DTYPES = _map_to_dtype(CODE_LLAMA_MODELS_MAPPING, torch.bfloat16)
 CODE_LLAMA_MODELS_PARAMS = _infer_model_sizes(CODE_LLAMA_MODELS_MAPPING)
 CODE_LLAMA_MODELS_FAMILY = _map_to_model_family(CODE_LLAMA_MODELS_MAPPING, 'code-llama')
+# Fast llama tokenizers are buggy in current transformers versions
+# TODO: may need to be changed in future versions if they correct the bug
+CODE_LLAMA_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in CODE_LLAMA_MODELS_MAPPING.keys()}
 _register_model('CODE_LLAMA')
 
 
@@ -465,13 +459,20 @@ def estimate_model_gpu_footprint(model_name, quantization_8bits: bool = False, q
     if max_fraction_gpu_0 < 0 or max_fraction_gpus < 0:
         raise ValueError('The maximum fraction of gpu memory to use cannot be negative.')
     
-    if max_fraction_gpu_0 > 0.9 or max_fraction_gpus > 0.9:
-        raise ValueError(('The maximum fraction of gpu memory to use cannot be larger than 0.9 because some '
+    if max_fraction_gpu_0 > 0.95 or max_fraction_gpus > 0.95:
+        raise ValueError(('The maximum fraction of gpu memory to use cannot be larger than 0.95 because some '
                          'memory need to stay free for the forward pass and other computations.'))
     
     # Silently use 4bits when both are True
     if quantization_4bits and quantization_8bits:
         quantization_8bits = False
+
+    # In this case we set it to 0.9 because otherwise bitsandbytes complain that we don't have enough resources
+    # but in practice after loading the model uses less memory than this
+    if (model_name == 'bloom-176B' and quantization_8bits and not quantization_4bits and \
+        gpu_0_available_memory == 0.8 and gpus_available_memory == 0.8):
+        gpu_0_available_memory = 0.9
+        gpus_available_memory = 0.9
 
     # If not provided take the default one
     if dtype is None:
