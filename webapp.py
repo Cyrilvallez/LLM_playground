@@ -262,11 +262,15 @@ def clear_chatbot():
 
 def print_gpu_debug() -> str:
 
+    N = torch.cuda.device_count()
+    out = f'You actually have access to {N} gpus. '
     try:
-        out = (f'You actually have access to {torch.cuda.device_count()} gpus. The model is taking the following '
-               f'resources (in GiB): {model.get_memory_footprint():.2f}')
+        if N != 0:
+            out += f'The model is taking the following gpu resources (in GiB): {model.get_memory_footprint():.2f}'
+        else:
+            out += f'The model is taking the following cpu resources (in GiB): {model.get_memory_footprint():.2f}'
     except NameError:
-        out = f'You actually have access to {torch.cuda.device_count()} gpus. There is no model in memory at the moment.'
+        out += 'There is no model in memory at the moment.'
 
     return out
 
