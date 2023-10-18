@@ -260,6 +260,16 @@ def clear_chatbot():
     return '', conversation.to_gradio_format()
     
 
+def print_gpu_debug() -> str:
+
+    try:
+        out = (f'You actually have access to {torch.cuda.device_count()} gpus. The model is taking the following '
+               f'resources (in GiB): {model.get_memory_footprint():.2f}')
+    except NameError:
+        out = f'You actually have access to {torch.cuda.device_count()} gpus. There is no model in memory at the moment.'
+
+    return out
+
 
 # Define general elements of the UI (generation parameters)
 model_name = gr.Dropdown(loader.ALLOWED_MODELS, value=DEFAULT, label='Model name',
@@ -291,6 +301,8 @@ prompt_chat = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', 
 output_chat = gr.Chatbot(label='Conversation')
 generate_button_chat = gr.Button('Generate text', variant='primary')
 clear_button_chat = gr.Button('Clear conversation')
+
+gpu_debug = gr.Markdown(value=print_gpu_debug())
 
 # Define the inputs for the main inference
 inputs_to_simple_generation = [prompt_text, max_new_tokens, do_sample, top_k, top_p, temperature,
@@ -379,6 +391,9 @@ with demo:
                     use_seed.render()
                     seed.render()
 
+            with gr.Accordion("GPU resources (debug purpose)", open=False):
+                gpu_debug.render()
+
     # Perform simple text generation when clicking the button
     generate_event1 = generate_button_text.click(text_generation, inputs=inputs_to_simple_generation,
                                                  outputs=output_text)
@@ -396,8 +411,9 @@ with demo:
 
     # Switch the model loaded in memory when clicking
     events_to_cancel = [generate_event1, generate_event2]
-    load_button.click(update_model, inputs=[model_name, quantization_8bits, quantization_4bits],
-                      outputs=[prompt_text, output_text, prompt_chat, output_chat], cancels=events_to_cancel)
+    load_event = load_button.click(update_model, inputs=[model_name, quantization_8bits, quantization_4bits],
+                                   outputs=[prompt_text, output_text, prompt_chat, output_chat], cancels=events_to_cancel)
+    load_event.then(lambda: gr.update(value=print_gpu_debug()), outputs=gpu_debug)
     
     # Clear the prompt and output boxes when clicking the button
     clear_button_text.click(lambda: ['', ''], outputs=[prompt_text, output_text])
@@ -414,8 +430,9 @@ with demo:
     # Correctly display the model and quantization currently on memory if we refresh the page (instead of default value for the elements)
     # and correctly reset the chat output
     demo.load(lambda: [gr.update(value=model.model_name), gr.update(value=conversation.to_gradio_format()),
-                       gr.update(value=model.quantization_8bits), gr.update(value=model.quantization_4bits)],
-              outputs=[model_name, output_chat, quantization_8bits, quantization_4bits])
+                       gr.update(value=model.quantization_8bits), gr.update(value=model.quantization_4bits),
+                       gr.update(value=print_gpu_debug())],
+              outputs=[model_name, output_chat, quantization_8bits, quantization_4bits, gpu_debug])
 
 
 if __name__ == '__main__':
