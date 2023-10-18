@@ -265,10 +265,12 @@ def print_gpu_debug() -> str:
     N = torch.cuda.device_count()
     out = f'You actually have access to {N} gpus. '
     try:
+        memory = model.get_memory_footprint()
+        formatted_memory = {key: f'{value:.2f}' for key, value in memory.items()}
         if N != 0:
-            out += f'The model is taking the following gpu resources (in GiB): {model.get_memory_footprint():.2f}'
+            out += f'The model is taking the following gpu resources (in GiB): {formatted_memory}'
         else:
-            out += f'The model is taking the following cpu resources (in GiB): {model.get_memory_footprint():.2f}'
+            out += f'The model is taking the following cpu resources (in GiB): {formatted_memory}'
     except NameError:
         out += 'There is no model in memory at the moment.'
 
