@@ -266,7 +266,7 @@ def print_gpu_debug() -> str:
     out = f'You actually have access to {N} gpus. '
     try:
         memory = model.get_memory_footprint()
-        formatted_memory = {key: f'{value:.2f}' for key, value in memory.items()}
+        formatted_memory = {key: float(f'{value:.2f}') for key, value in memory.items()}
         if N != 0:
             out += f'The model is taking the following gpu resources (in GiB): {formatted_memory}'
         else:
