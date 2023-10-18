@@ -5,9 +5,9 @@ import queue
 import copy
 from concurrent.futures import ThreadPoolExecutor
 
+from transformers import TextIteratorStreamer
 import torch
 import gradio as gr
-from transformers import TextIteratorStreamer
 
 import engine
 from engine import loader
@@ -23,6 +23,7 @@ CREDENTIALS_FILE = os.path.join(utils.ROOT_FOLDER, '.gradio_login.txt')
 # Initialize global model (necessary not to reload the model for each new inference)
 model = engine.HFModel(DEFAULT)
 
+# TODO: make conversation a session state variable instead of global state variable
 # Initialize a global conversation object for chatting with the models
 conversation = model.get_empty_conversation()
 
@@ -37,9 +38,17 @@ def update_model(model_name: str, quantization_8bits: bool = False, quantization
     quantization : bool, optional
         Whether to load the model in 8 bits mode.
     """
-    
+
     global model
     global conversation
+
+    try:
+        # If we ask for the same setup, do nothing
+        if model_name == model.model_name and quantization_8bits == model.quantization_8bits and \
+            quantization_4bits == model.quantization_4bits:
+            return '', '', '', [[None, None]]
+    except NameError:
+        pass
 
     if quantization_8bits and quantization_4bits:
         raise gr.Error('You cannot use both int8 and int4 quantization. Choose either one and try reloading.')
@@ -61,8 +70,8 @@ def update_model(model_name: str, quantization_8bits: bool = False, quantization
         model = engine.HFModel(model_name, quantization_8bits=quantization_8bits,
                                quantization_4bits=quantization_4bits)
         conversation = model.get_empty_conversation()
-    except:
-        raise gr.Error('There was an error loading this model. Please retry or choose another one.')
+    except Exception as e:
+        raise gr.Error(f'The following error happened during loading: {repr(e)}. Please retry or choose another one.')
     
     # Return values to clear the input and output textboxes, and input and output chatbot boxes
     return '', '', '', [[None, None]]
@@ -134,7 +143,6 @@ def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
         # Get actual result and yield it (which may be slightly different due to postprocessing)
         generated_text = future.result()
         yield prompt + generated_text
-
 
 
 def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = True, top_k: int = 40,
@@ -211,7 +219,6 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
     yield '', conversation.to_gradio_format()
-
 
 
 def authentication(username: str, password: str) -> bool:
@@ -382,6 +389,7 @@ with demo:
     # Perform chat generation when clicking the button
     generate_event2 = generate_button_chat.click(chat_generation, inputs=inputs_to_chatbot,
                                                  outputs=[prompt_chat, output_chat])
+
     # Add automatic callback on success
     generate_event2.success(lambda *args: automatic_logging_chat.flag(args), inputs=inputs_to_chat_callback,
                             preprocess=False)
@@ -400,9 +408,15 @@ with demo:
     automatic_logging_chat.setup(inputs_to_chat_callback, flagging_dir='chatbot_logs')
 
     # Change visibility of generation parameters if we perform greedy search
-    do_sample.input(lambda value: [gr.update(visible=value) for _ in range(6)], inputs=do_sample,
+    do_sample.input(lambda value: [gr.update(visible=value) for _ in range(5)], inputs=do_sample,
                     outputs=[top_k, top_p, temperature, use_seed, seed])
     
+    # Correctly display the model and quantization currently on memory if we refresh the page (instead of default value for the elements)
+    # and correctly reset the chat output
+    demo.load(lambda: [gr.update(value=model.model_name), gr.update(value=conversation.to_gradio_format()),
+                       gr.update(value=model.quantization_8bits), gr.update(value=model.quantization_4bits)],
+              outputs=[model_name, output_chat, quantization_8bits, quantization_4bits])
+
 
 if __name__ == '__main__':
 

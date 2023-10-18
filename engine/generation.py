@@ -6,6 +6,7 @@ import math
 import copy
 
 import torch
+import scipy
 import numpy as np
 from transformers import StoppingCriteriaList, GenerationConfig
 
@@ -23,7 +24,7 @@ class HFModel(object):
 
     def __init__(self, model_name: str, quantization_8bits: bool = False, quantization_4bits: bool = False,
                  dtype: torch.dtype | None = None, max_fraction_gpu_0: float = 0.8, max_fraction_gpus: float = 0.8,
-                 device_map: dict | None = None, gpu_rank: int = 0):
+                 device_map: dict | str | None = None, gpu_rank: int = 0):
         
         # Save the current allocated memory on each gpu to estimate model size after loading
         if torch.cuda.is_available():
@@ -299,6 +300,9 @@ class HFModel(object):
         elif self.tokenizer.pad_token_id is not None:
             pad_token_id = self.tokenizer.pad_token_id
         else:
+            # We don't really need a padding token in our case as we never need to pad, we just make sure
+            # it is a known special token (eos token) that will be generated when the sequence is finished.
+            # This way it is automatically removed from the sequence when using `decode(..., skip_special_tokens=True)`
             pad_token_id = eos_token_id
 
         # create the config
@@ -492,7 +496,7 @@ class HFModel(object):
                 generated_batch = stopping.post_process_sequences(truncated_outputs, self.tokenizer, stopping_patterns,
                                                                   self.extra_eos_tokens, parser)
             else:
-                generated_batch = self.tokenizer.batch_decode(truncated_outputs, skip_special_tokens=True)
+                generated_batch = self.tokenizer.batch_decode(truncated_outputs, skip_special_tokens=False)
             
             # reattach the prompt if needed
             if not truncate_prompt_from_output:
@@ -537,56 +541,74 @@ class HFModel(object):
         else:
             memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
 
-        available_memory = memory*0.9 - self.max_memory_footprint
+        # Only take 0.85 of the gpu memory into account in order to not completely clutter the memory
+        available_memory = memory*0.85 - self.get_max_device_memory_footprint()
 
+        # Try loading estimator file
         try:
             reference_file = os.path.join(utils.ROOT_FOLDER, 'memory_estimator', self.model_name, f'{self.dtype_category()}.json')
             batch_footprint = utils.load_json(reference_file)
+            only_scale_with_input_size = batch_footprint.pop('only_scale_with_input_size', False)
             # Convert keys to int
-            batch_footprint = {int(k): {int(k1):v1 for k1,v1 in batch_footprint[k].items()} for k in batch_footprint.keys()}
+            batch_footprint = {int(k): v for k, v in batch_footprint.items()}
         # If no precise estimate exist, fall back to simple heuristics
         except FileNotFoundError:
-            parameters = self.parameters_count()
-            if parameters < 5:
-                batch = int(available_memory // 0.5)
-            elif parameters < 10:
-                batch = int(available_memory // 1)
-            elif parameters < 20:
-                batch = int(available_memory // 2)
-            else:
-                batch = int(available_memory // 3)
-            
-            return max(batch, 1)
+            return self.infer_best_batch_size_by_heuristics(available_memory)
 
-        # Find the reference input size immediately larger than the current input size. If none exist, take 
-        # the largest and adapt with a coeff
-        input_sizes = np.sort(list(batch_footprint.keys()))
-        indices = np.nonzero(input_sizes >= input_size)
-        if len(indices) == 0:
-            ref_input_size = input_sizes[-1]
-            input_size_coeff = input_size / ref_input_size
+
+        x = list(batch_footprint.keys())
+        y = list(batch_footprint.values())
+        # sort according to increasing sequence
+        sorting = np.argsort(x)
+        x = np.array(x)[sorting]
+        y = np.array(y)[sorting]
+        
+        # Memory usage is linear wrt to sequence length when using K-V cache
+        fit = scipy.stats.linregress(x, y)
+        intercept = fit.intercept
+        slope = fit.slope
+        r2 = fit.rvalue**2
+
+        # If the flag `only_scale_with_input_size` is active, the memory needed for subsequent forward passes
+        # is negligible compared to the memory needed to compute the K-V cache the first time
+        sequence_length = input_size if only_scale_with_input_size else input_size + max_new_tokens
+
+        # This should always be the case, but check it if for some reason the behavior is not sufficiently linear
+        if r2 >= 0.95:
+            memory_needed = intercept + slope * sequence_length
+        # In this case, fall back to simple heuristics
         else:
-            ref_input_size = input_sizes[indices[0][0]]
-            input_size_coeff = 1
+            return self.infer_best_batch_size_by_heuristics(available_memory)
 
-        # Find the reference max new tokens immediately larger than the current max new tokens. If none exist, 
-        # take the largest and adapt with a coeff
-        max_tokens = np.sort(list(batch_footprint[ref_input_size].keys()))
-        indices = np.nonzero(max_tokens >= max_new_tokens)
-        if len(indices) == 0:
-            ref_max_tokens = max_tokens[-1]
-            max_tokens_coeff = max_new_tokens / ref_max_tokens
+        return int(available_memory // memory_needed)
+    
+
+    def infer_best_batch_size_by_heuristics(self, available_memory: float) -> int:
+        """Infer the largest possible batch size using very simple and raw heuristics. It only uses the number
+        of parameters of the model, which is not a very good indicator. 
+
+        Parameters
+        ----------
+        available_memory : float
+            The memory available for the forward pass.
+
+        Returns
+        -------
+        int
+            A very raw estimate of the best batch size.
+        """
+
+        parameters = self.parameters_count()
+        if parameters < 5:
+            batch = int(available_memory // 0.5)
+        elif parameters < 10:
+            batch = int(available_memory // 1)
+        elif parameters < 20:
+            batch = int(available_memory // 2)
         else:
-            ref_max_tokens = max_tokens[indices[0][0]]
-            max_tokens_coeff = 1
-
-        # Adapt the estimation with the coeffs if needed (they should usually be 1)
-        ref_batch_footprint = batch_footprint[ref_input_size][ref_max_tokens] * input_size_coeff * max_tokens_coeff
-
-        if ref_batch_footprint < 0:
-            return num_return_sequences
-
-        return int(available_memory // ref_batch_footprint)
+            batch = int(available_memory // 3)
+        
+        return max(batch, 1)
 
 
     def oom_safe_batch_generation(self, input: torch.Tensor, generation_config: GenerationConfig,
@@ -750,4 +772,3 @@ class HFModel(object):
         """Return a new empty conversation with the template of the current model."""
         return get_conversation_template(self.model_name)
    
-

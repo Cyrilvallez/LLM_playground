@@ -109,16 +109,16 @@ PYTHON_CODE_REGEXES = [
     # Regexes that match the usual markdown python syntax with 3 backticks
     r'```python\n(.*?)(?:$|\n```)',
     r'```\n(.*?)(?:$|\n```)',
-
     PYTHON_CODE_REGEX,
 ]
 
 
 
 class PythonParser(CodeParser):
-    """Parser that extracts Python code from strings.
+    """Parser that extracts Python code from strings. 
 
-    NOTE: It is not perfect! The following patterns are NOT parsed correctly:
+    NOTE: It is not perfect and should only be used for precise cases! It is not robust against all possible
+    weird corner-cases. For example, the following patterns are NOT parsed correctly:
 
     - text containing code blocks formatted in different ways (e.g. one block with triple backticks, one without)
     - text containing triple backticks formatted code blocks, themselves containing triple backticks
@@ -132,18 +132,32 @@ class PythonParser(CodeParser):
     def __init__(self):
         self.python_start_keywords = PYTHON_START_KEYWORDS
         self.python_patterns = PYTHON_PATTERNS
+        self.python_group = PYTHON_GROUP
         self.code_regexes = PYTHON_CODE_REGEXES
     
 
     def parse(self, s: str) -> list[str] | None:
 
+        out = []
+
+        # Check if the beginning of the string is an indented block (if it is, we assume it's code)
+        start = re.match(r'^\n?(?:    )+', s)
+        if start is not None:
+            match = re.search(r'^(.*?)(?:$|(?:\n(?!' + self.python_group + r')\S))', s, re.DOTALL)
+            first_block = match.group(1)
+            # remove that part of the initial string
+            s = s.replace(first_block, '', 1)
+            out.append(first_block.rstrip())
+
         for regex in self.code_regexes:
             matches = re.findall(regex, s, re.DOTALL)
             if len(matches) > 0:
-                # remove trailing (and leading, but there should not be any) newlines
-                return [x.strip() for x in matches]
-            
-        return None
+                # remove trailing newlines
+                return out + [x.rstrip() for x in matches]
+        
+        out = None if len(out) == 0 else out
+
+        return out
     
 
 
@@ -163,8 +177,26 @@ def foo(bar):
 def foo(bar):
     print(bar)""",
 
-"""def foo(bar):
+    """def foo(bar):
     print(bar)""",
+
+    """    print('test)
+    return True""",
+
+    """
+    return True
+foobar
+def test():
+    print('test')
+should not be code
+    """,
+
+    """    print('bar')
+foobar
+```python
+def foo(bar):
+    print('bar')
+```""",
 
     # Without backticks
     """Here's a Python implementation of the function:
@@ -202,6 +234,20 @@ _EXPECTED_OUTPUTS = [
 
     """def foo(bar):
     print(bar)""",
+
+    """    print('test)
+    return True""",
+
+    """
+    return True
+
+def test():
+    print('test')""",
+
+    """    print('bar')
+
+def foo(bar):
+    print('bar')""",
 
     """def parse_music(music_string: str) -> List[int]:
     \"\"\"Parses a music string in the special ASCII format and returns a list of note durations.\"\"\"

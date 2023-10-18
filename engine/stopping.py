@@ -1,3 +1,5 @@
+import re
+
 import torch
 import numpy as np
 from transformers import PreTrainedTokenizerBase, StoppingCriteria
@@ -24,10 +26,12 @@ EXTENDED_CODE_STOP_PATTERNS = CODE_STOP_PATTERNS + (
 
 
 class TextPatternStopping(StoppingCriteria):
+    """Stop generation upon meeting any of the `stopping_patterns` or `extra_eos_tokens`.
+    """
 
     def __init__(self, prompt_ids_length: int, tokenizer: PreTrainedTokenizerBase,
-                 stopping_patterns: list[str] | tuple[str] | None = EXTENDED_CODE_STOP_PATTERNS,
-                 extra_eos_tokens: list[str] | None = None, parser: CodeParser | None = None):
+                 stopping_patterns: list[str] | tuple[str] | None, extra_eos_tokens: list[str] | None = None,
+                 parser: CodeParser | None = None):
 
         super().__init__()
         self.prompt_ids_length = prompt_ids_length
@@ -100,13 +104,51 @@ class TextPatternStopping(StoppingCriteria):
         if self.parser is None:
             done_sequences = self.check_patterns(generated_sequences, self.all_patterns)
             return all(done_sequences)
-        # Else first check the eos is the full sequences, then parse and check for the other patterns
+        # Else first check the eos in the full sequences, then parse and check for the other patterns
         else:
             done_with_eos = self.check_patterns(generated_sequences, self.extra_eos_tokens)
             parsed_sequences = [self.parser(sequence) for sequence in generated_sequences]
             done_with_patterns = self.check_patterns(parsed_sequences, self.stopping_patterns)
             return all(np.logical_or(done_with_eos, done_with_patterns))
+        
 
+
+class OutOfIndentationStopping(StoppingCriteria):
+    """Stop generation if we detect any newline character (or start of string) immeditaly followed by a
+    non-space character (i.e. the code/text is not indented).
+
+    This is useful for HumanEval benchmarks, as it is stronger than just stopping on the `CODE_STOP_PATTERNS`
+    used by default. For example, some models generate the function body correctly, and then generate
+    `\nExplanation:...`, which would not be detected by `CODE_STOP_PATTERNS` but causes resulting code to not compile.
+    """
+
+    def __init__(self, prompt_ids_length: int, tokenizer: PreTrainedTokenizerBase,
+                 extra_eos_tokens: list[str] | None = None):
+
+        super().__init__()
+        self.prompt_ids_length = prompt_ids_length
+        self.tokenizer = tokenizer
+        self.extra_eos_tokens = extra_eos_tokens
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+
+        outputs = input_ids[:, self.prompt_ids_length:]
+        generated_sequences = self.tokenizer.batch_decode(outputs)
+
+        done_sequences = []
+
+        for sequence in generated_sequences:
+            # Check for extra eos
+            done_eos = any([pattern in sequence for pattern in self.extra_eos_tokens])
+            
+            # Check if we find a new line (or start of string) immediately followed by a non-space character
+            # (thus no indentation). However, we allow code commentary character
+            done_indentation = re.search(r'^[^#\s]|\n[^#\s]', sequence) is not None
+
+            done_sequences.append(any([done_eos, done_indentation]))
+
+        return all(done_sequences)
+    
 
 
 def post_process_stopping_patterns(prompt_truncated_generated_sequences: list[str],
@@ -226,7 +268,7 @@ def post_process_sequences(prompt_truncated_outputs: torch.Tensor, tokenizer: Pr
         The post-processed generated sequences.
     """
     
-    # Return None if extra_eos_tokens is Npne
+    # Return None if extra_eos_tokens is None
     extra_eos_tokens_ids = tokenizer.convert_tokens_to_ids(extra_eos_tokens)
     pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
 
