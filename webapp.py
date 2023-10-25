@@ -272,7 +272,7 @@ def continue_generation(additional_max_new_tokens: int = 60, do_sample: bool = T
         
         # Get results from the streamer and yield it
         try:
-            generated_text = conv_copy.model_history_text[-1] + ' '
+            generated_text = conv_copy.model_history_text[-1]
             for new_text in streamer:
                 generated_text += new_text
                 # Update model answer (on a copy of the conversation) as it is being generated
