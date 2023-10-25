@@ -1,6 +1,8 @@
 """
 This file contains the conversation templates for the models we use.
 """
+import uuid
+import copy
 
 from engine import loader
 
@@ -21,6 +23,14 @@ class GenericConversation(object):
 
         # Extra eos tokens
         self.extra_eos_tokens = []
+
+        # Some templates need an additional space when using `get_last_turn_continuation_prompt`
+        self.add_space_to_continuation_prompt = False
+
+        # create unique identifier (used in gradio flagging)
+        # TODO: maybe override __deepcopy__ method so that the id is different for deepcopies? For now it is
+        # not needed but keep it in mind
+        self.id = str(uuid.uuid4())
 
 
     def __len__(self) -> int:
@@ -95,6 +105,22 @@ class GenericConversation(object):
             raise ValueError('It looks like the last user message was already answered by the model.')
         
 
+    def append_to_last_model_message(self, model_output: str):
+        """Append text to the last model message, in case the `max_new_tokens` was set to a value too low
+        to finish the model answer.
+
+        Parameters
+        ----------
+        model_output : str
+            The model message.
+        """
+
+        if self.model_history_text[-1] is None:
+            raise ValueError('The last user message was never answered. You should use `append_model_message`.')
+        else:
+            self.model_history_text[-1] += model_output
+        
+
     def get_prompt(self) -> str:
         """Format the prompt representing the conversation that we will feed to the tokenizer.
         """
@@ -110,6 +136,34 @@ class GenericConversation(object):
             prompt += user_message + self.eos_token
             if model_response is not None:
                 prompt += model_response + self.eos_token
+
+        return prompt
+    
+
+    def get_last_turn_continuation_prompt(self) -> str:
+        """Format the prompt to feed to the model in order to continue the last turn of the model output, in case
+        `max_new_tokens` was set to a low value and the model did not finish its output.
+        """
+
+        if len(self) == 0:
+            raise RuntimeError('Cannot continue the last turn on an empty conversation.')
+    
+        if self.model_history_text[-1] is None:
+            raise RuntimeError('Cannot continue an empty last turn.')
+        
+        # Use a copy since we will modify the last model turn
+        conv_copy = copy.deepcopy(self)
+        last_model_output = conv_copy.model_history_text[-1]
+        # Set it to None to mimic the behavior of an un
+        conv_copy.model_history_text[-1] = None
+
+        # Get prompt of conversation without the last model turn
+        prompt = conv_copy.get_prompt()
+        # Reattach last turn, with or without additional space
+        if self.add_space_to_continuation_prompt:
+            prompt += ' ' + last_model_output
+        else:
+            prompt += last_model_output
 
         return prompt
     
@@ -165,7 +219,7 @@ class StarChatConversation(GenericConversation):
         """Format the prompt representing the conversation that we will feed to the tokenizer.
         """
         
-        prompt = self.system_token + '\n' + self.system_prompt + self.sep_token + '\n'
+        prompt = self.system_token + '\n' + self.system_prompt + self.sep_token + '\n' if self.system_prompt != '' else ''
 
         for user_message, model_response in self:
 
@@ -177,6 +231,7 @@ class StarChatConversation(GenericConversation):
 
         return prompt
     
+    
 
 # reference: https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py#L334
 class VicunaConversation(GenericConversation):
@@ -184,6 +239,9 @@ class VicunaConversation(GenericConversation):
     def __init__(self, eos_token: str):
 
         super().__init__(eos_token)
+
+        # Override value
+        self.add_space_to_continuation_prompt = True
 
         self.system_prompt = ("A chat between a curious user and an artificial intelligence assistant. "
                               "The assistant gives helpful, detailed, and polite answers to the user's questions.")
@@ -208,6 +266,7 @@ class VicunaConversation(GenericConversation):
 
         return prompt
     
+    
 
 # reference: https://github.com/facebookresearch/llama/blob/1a240688810f8036049e8da36b073f63d2ac552c/llama/generation.py#L212
 class Llama2ChatConversation(GenericConversation):
@@ -216,14 +275,17 @@ class Llama2ChatConversation(GenericConversation):
 
         super().__init__(eos_token)
 
+        # Override value
+        self.add_space_to_continuation_prompt = True
+
         self.bos_token = '<s>'
 
-        self.system_prompt = ("You are a helpful, respectful and honest assistant. Always answer as helpfully ",
-                              "as possible, while being safe. Your answers should not include any harmful, ",
-                              "unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that ",
-                              "your responses are socially unbiased and positive in nature.\n\n",
-                              "If a question does not make any sense, or is not factually coherent, explain why ",
-                              "instead of answering something not correct. If you don't know the answer to a ",
+        self.system_prompt = ("You are a helpful, respectful and honest assistant. Always answer as helpfully "
+                              "as possible, while being safe. Your answers should not include any harmful, "
+                              "unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that "
+                              "your responses are socially unbiased and positive in nature.\n\n"
+                              "If a question does not make any sense, or is not factually coherent, explain why "
+                              "instead of answering something not correct. If you don't know the answer to a "
                               "question, please don't share false information.")
         self.system_template = '<<SYS>>\n{system_prompt}\n<</SYS>>\n\n'
 
@@ -235,7 +297,11 @@ class Llama2ChatConversation(GenericConversation):
         """Format the prompt representing the conversation that we will feed to the tokenizer.
         """
 
-        system_prompt = self.system_template.format(system_prompt=self.system_prompt.strip())
+        # If we are not using system prompt, do not add the template formatting with empty prompt
+        if self.system_prompt.strip() != '':
+            system_prompt = self.system_template.format(system_prompt=self.system_prompt.strip())
+        else:
+            system_prompt = ''
         prompt = ''
 
         for i, (user_message, model_response) in enumerate(self):
@@ -253,7 +319,7 @@ class Llama2ChatConversation(GenericConversation):
 
         return prompt
     
-
+    
 
 # Mapping from model name to conversation class name
 CONVERSATION_MAPPING = {
@@ -307,3 +373,6 @@ def get_conversation_template(model_name: str) -> GenericConversation:
         conversation = GenericConversation(eos_token=eos_token)
 
     return conversation
+
+
+

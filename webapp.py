@@ -11,6 +11,7 @@ import gradio as gr
 
 import engine
 from engine import loader
+from engine.streamer import TextContinuationStreamer
 from helpers import utils
 
 
@@ -19,6 +20,9 @@ DEFAULT = 'llama2-7B-chat' if torch.cuda.is_available() else 'bloom-560M'
 
 # File where the valid credentials are stored
 CREDENTIALS_FILE = os.path.join(utils.ROOT_FOLDER, '.gradio_login.txt')
+
+# This will be setup by the authentication method
+USERNAME = None
 
 # Initialize global model (necessary not to reload the model for each new inference)
 model = engine.HFModel(DEFAULT)
@@ -111,7 +115,7 @@ def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     if not use_seed:
         seed = None
 
-    timeout = 10
+    timeout = 20
 
     # To show text as it is being generated
     streamer = TextIteratorStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
@@ -180,7 +184,7 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     if not use_seed:
         seed = None
 
-    timeout = 10
+    timeout = 20
 
     # To show text as it is being generated
     streamer = TextIteratorStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
@@ -192,7 +196,7 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     # use an executor because it makes it easier to catch possible exceptions
     with ThreadPoolExecutor(max_workers=1) as executor:
         # This will update `conversation` in-place
-        future = executor.submit(model.generate_conversation, prompt, conv_history=conversation,
+        future = executor.submit(model.generate_conversation, prompt, system_prompt='', conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
                                  temperature=temperature, seed=seed, streamer=streamer)
         
@@ -221,6 +225,77 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     yield '', conversation.to_gradio_format()
 
 
+
+def continue_generation(additional_max_new_tokens: int = 60, do_sample: bool = True, top_k: int = 40,
+                        top_p: float = 0.90, temperature: float = 0.9, use_seed: bool = False,
+                        seed: int | None = None) -> tuple[str, list[tuple[str, str]]]:
+    """Continue the last turn of the model output.
+
+    Parameters
+    ----------
+    additional_max_new_tokens : int, optional
+        How many new tokens to generate, by default 60.
+    do_sample : bool, optional
+        Whether to introduce randomness in the generation, by default True.
+    top_k : int, optional
+        How many tokens with max probability to consider for randomness, by default 100.
+    top_p : float, optional
+        The probability density covering the new tokens to consider for randomness, by default 0.92.
+    temperature : float, optional
+        How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
+        no randomness), by default 0.9.
+    use_seed : bool, optional
+        Whether to use a fixed seed for reproducibility., by default False.
+    seed : Union[None, int], optional
+        An optional seed to force the generation to be reproducible.
+
+    Returns
+    -------
+    tuple[str, list[tuple[str, str]]]
+        An empty string to reinitialize the prompt box, and the conversation as a list[tuple[str, str]].
+    """
+
+    timeout = 20
+
+    # To show text as it is being generated
+    streamer = TextContinuationStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
+
+    conv_copy = copy.deepcopy(conversation)
+    
+    # We need to launch a new thread to get text from the streamer in real-time as it is being generated. We
+    # use an executor because it makes it easier to catch possible exceptions
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        # This will update `conversation` in-place
+        future = executor.submit(model.continue_last_conversation_turn, conv_history=conversation,
+                                 max_new_tokens=additional_max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
+                                 temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
+        
+        # Get results from the streamer and yield it
+        try:
+            generated_text = conv_copy.model_history_text[-1] + ' '
+            for new_text in streamer:
+                generated_text += new_text
+                # Update model answer (on a copy of the conversation) as it is being generated
+                conv_copy.model_history_text[-1] = generated_text
+                # The first output is an empty string to clear the input box, the second is the format output
+                # to use in a gradio chatbot component
+                yield '', conv_copy.to_gradio_format()
+
+        # If for some reason the queue (from the streamer) is still empty after timeout, we probably
+        # encountered an exception
+        except queue.Empty:
+            e = future.exception()
+            if e is not None:
+                raise gr.Error(f'The following error happened during generation: {repr(e)}')
+            else:
+                raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
+    
+    
+    # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
+    yield '', conversation.to_gradio_format()
+
+
+
 def authentication(username: str, password: str) -> bool:
     """Simple authentication method.
 
@@ -234,29 +309,36 @@ def authentication(username: str, password: str) -> bool:
     Returns
     -------
     bool
-        Return True if both the username and password match the credentials stored in `CREDENTIALS_FILE`. 
+        Return True if both the username and password match some credentials stored in `CREDENTIALS_FILE`. 
         False otherwise.
     """
 
     with open(CREDENTIALS_FILE, 'r') as file:
         # Read lines and remove whitespaces
-        lines = [line.strip() for line in file.readlines()]
+        lines = [line.strip() for line in file.readlines() if line.strip() != '']
 
-    valid_username = lines[0]
-    valid_password = lines[1]
+    valid_usernames = lines[0::2]
+    valid_passwords = lines[1::2]
 
-    if (username == valid_username) & (password == valid_password):
-        return True
-    else:
-        return False
+    if username in valid_usernames:
+        index = valid_usernames.index(username)
+        # Check that the password also matches at the corresponding index
+        if password == valid_passwords[index]:
+            # Save the username in a global variable for later access
+            global USERNAME
+            USERNAME = username
+            return True
+    
+    return False
     
 
 def clear_chatbot():
     """Erase the conversation history and reinitialize the elements.
     """
 
-    # Erase the conversation history before
-    conversation.erase_conversation()
+    # Create new global conv object (we need a new unique id)
+    global conversation
+    conversation = model.get_empty_conversation()
     return '', conversation.to_gradio_format()
     
 
@@ -282,8 +364,10 @@ model_name = gr.Dropdown(loader.ALLOWED_MODELS, value=DEFAULT, label='Model name
                          info='Choose the model you want to use.', multiselect=False)
 quantization_8bits = gr.Checkbox(value=False, label='int8 quantization', visible=torch.cuda.is_available())
 quantization_4bits = gr.Checkbox(value=False, label='int4 quantization', visible=torch.cuda.is_available())
-max_new_tokens = gr.Slider(10, 1000, value=250, step=10, label='Max new tokens',
+max_new_tokens = gr.Slider(10, 4000, value=500, step=10, label='Max new tokens',
                            info='Maximum number of new tokens to generate.')
+max_additional_new_tokens = gr.Slider(1, 500, value=100, step=1, label='Max additional new tokens',
+                           info='New tokens to generate with "Continue last answer".')
 do_sample = gr.Checkbox(value=True, label='Sampling', info=('Whether to incorporate randomness in generation. '
                                                             'If not selected, perform greedy search.'))
 top_k = gr.Slider(0, 200, value=50, step=5, label='Top-k',
@@ -306,6 +390,7 @@ clear_button_text = gr.Button('Clear prompt', variant='secondary')
 prompt_chat = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
 output_chat = gr.Chatbot(label='Conversation')
 generate_button_chat = gr.Button('Generate text', variant='primary')
+continue_button_chat = gr.Button('Continue last answer', variant='primary')
 clear_button_chat = gr.Button('Clear conversation')
 
 gpu_debug = gr.Markdown(value=print_gpu_debug())
@@ -314,11 +399,12 @@ gpu_debug = gr.Markdown(value=print_gpu_debug())
 inputs_to_simple_generation = [prompt_text, max_new_tokens, do_sample, top_k, top_p, temperature,
                                use_seed, seed]
 inputs_to_chatbot = [prompt_chat, max_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
+inputs_to_chatbot_continuation = [max_additional_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
 
 # Define inputs for the logging callbacks
 inputs_to_text_callback = [model_name, quantization_8bits, quantization_4bits, *inputs_to_simple_generation,
                            output_text]
-inputs_to_chat_callback = [model_name, quantization_8bits, quantization_4bits, *inputs_to_chatbot,
+inputs_to_chat_callback = [model_name, quantization_8bits, quantization_4bits, max_new_tokens, *inputs_to_chatbot_continuation,
                            output_chat]
 
 # set-up callbacks for flagging and automatic logging
@@ -364,6 +450,7 @@ with demo:
                 with gr.Row():
                     generate_button_chat.render()
                     clear_button_chat.render()
+                    continue_button_chat.render()
                 output_chat.render()
 
                 gr.Markdown("### Prompt Examples")
@@ -385,9 +472,11 @@ with demo:
             
             # Accordion for generation parameters
             with gr.Accordion("Text generation parameters", open=False):
+                # with gr.Row():
+                do_sample.render()
                 with gr.Row():
-                    do_sample.render()
                     max_new_tokens.render()
+                    max_additional_new_tokens.render()
                 with gr.Row():
                     top_k.render()
                     top_p.render()
@@ -404,19 +493,29 @@ with demo:
     generate_event1 = generate_button_text.click(text_generation, inputs=inputs_to_simple_generation,
                                                  outputs=output_text)
     # Add automatic callback on success
-    generate_event1.success(lambda *args: automatic_logging_text.flag(args), inputs=inputs_to_text_callback,
-                            preprocess=False)
+    generate_event1.success(lambda *args: automatic_logging_text.flag(args, username=USERNAME),
+                            inputs=inputs_to_text_callback, preprocess=False)
 
     # Perform chat generation when clicking the button
     generate_event2 = generate_button_chat.click(chat_generation, inputs=inputs_to_chatbot,
                                                  outputs=[prompt_chat, output_chat])
 
     # Add automatic callback on success
-    generate_event2.success(lambda *args: automatic_logging_chat.flag(args), inputs=inputs_to_chat_callback,
-                            preprocess=False)
+    generate_event2.success(lambda *args: automatic_logging_chat.flag(args, flag_option=f'generation: {conversation.id}',
+                                                                      username=USERNAME),
+                            inputs=inputs_to_chat_callback, preprocess=False)
+    
+    # Continue generation when clicking the button
+    generate_event3 = continue_button_chat.click(continue_generation, inputs=inputs_to_chatbot_continuation,
+                                                 outputs=[prompt_chat, output_chat])
+    
+    # Add automatic callback on success
+    generate_event3.success(lambda *args: automatic_logging_chat.flag(args, flag_option=f'continuation: {conversation.id}',
+                                                                      username=USERNAME),
+                            inputs=inputs_to_chat_callback, preprocess=False)
 
     # Switch the model loaded in memory when clicking
-    events_to_cancel = [generate_event1, generate_event2]
+    events_to_cancel = [generate_event1, generate_event2, generate_event3]
     load_event = load_button.click(update_model, inputs=[model_name, quantization_8bits, quantization_4bits],
                                    outputs=[prompt_text, output_text, prompt_chat, output_chat], cancels=events_to_cancel)
     load_event.then(lambda: gr.update(value=print_gpu_debug()), outputs=gpu_debug)
@@ -425,20 +524,20 @@ with demo:
     clear_button_text.click(lambda: ['', ''], outputs=[prompt_text, output_text])
     clear_button_chat.click(clear_chatbot, outputs=[prompt_chat, output_chat])
 
-    # Setup the flagging callbacks
-    automatic_logging_text.setup(inputs_to_text_callback, flagging_dir='text_logs')
-    automatic_logging_chat.setup(inputs_to_chat_callback, flagging_dir='chatbot_logs')
-
     # Change visibility of generation parameters if we perform greedy search
     do_sample.input(lambda value: [gr.update(visible=value) for _ in range(5)], inputs=do_sample,
                     outputs=[top_k, top_p, temperature, use_seed, seed])
     
-    # Correctly display the model and quantization currently on memory if we refresh the page (instead of default value for the elements)
-    # and correctly reset the chat output
-    demo.load(lambda: [gr.update(value=model.model_name), gr.update(value=conversation.to_gradio_format()),
-                       gr.update(value=model.quantization_8bits), gr.update(value=model.quantization_4bits),
-                       gr.update(value=print_gpu_debug())],
-              outputs=[model_name, output_chat, quantization_8bits, quantization_4bits, gpu_debug])
+    # Correctly display the model and quantization currently on memory if we refresh the page (instead of default
+    # value for the elements) and correctly reset the chat output
+    loading_events = demo.load(lambda: [gr.update(value=model.model_name), gr.update(value=conversation.to_gradio_format()),
+                                        gr.update(value=model.quantization_8bits), gr.update(value=model.quantization_4bits),
+                                        gr.update(value=print_gpu_debug())],
+                                outputs=[model_name, output_chat, quantization_8bits, quantization_4bits, gpu_debug])
+    
+    # Set-up the flagging callbacks with updated USERNAME at loading time (in case of user change in the same session)
+    loading_events.then(lambda: [automatic_logging_text.setup(inputs_to_text_callback, flagging_dir=f'text_logs_{USERNAME}'),
+                                 automatic_logging_chat.setup(inputs_to_chat_callback, flagging_dir=f'chatbot_logs_{USERNAME}')])
 
 
 if __name__ == '__main__':

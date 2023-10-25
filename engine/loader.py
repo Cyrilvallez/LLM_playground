@@ -95,6 +95,25 @@ def _map_to_model_family(models_mapping: dict[str, str], family_name: str) -> di
     return {key: family_name for key in models_mapping.keys()}
 
 
+def _map_to_context_size(models_mapping: dict[str, str], context_size: int) -> dict[str, int]:
+    """Map each model name (keys of `models_mapping`) to the same `context_size`.
+
+    Parameters
+    ----------
+    models_mapping : dict[str, str]
+        Models name mapping.
+    context_size : int
+        The maximum context size that the model can handle.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping from individual model name to its context size.
+    """
+    
+    return {key: context_size for key in models_mapping.keys()}
+
+
 def _register_model(model_name: str):
     """Register a model into the global variables containing all models parameters.
 
@@ -108,7 +127,7 @@ def _register_model(model_name: str):
     if re.search(r'[^A-Z0-9_]', model_name):
         raise ValueError('Cannot register a model with a name containing special or lowercase characters.')
 
-    required_suffixes = ('MODELS_MAPPING', 'MODELS_DTYPES', 'MODELS_PARAMS', 'MODELS_FAMILY')
+    required_suffixes = ('MODELS_MAPPING', 'MODELS_DTYPES', 'MODELS_PARAMS', 'MODELS_FAMILY', 'MODELS_CONTEXT_SIZE')
     optional_suffixes = ('MODELS_ADDITIONAL_MODEL_KWARGS', 'MODELS_ADDITIONAL_TOKENIZER_KWARGS')
 
     # Template string to `exec` in order to merge the dictionaries
@@ -133,6 +152,7 @@ ALL_MODELS_MAPPING = {}
 ALL_MODELS_DTYPES = {}
 ALL_MODELS_PARAMS = {}
 ALL_MODELS_FAMILY = {}
+ALL_MODELS_CONTEXT_SIZE = {}
 ALL_MODELS_ADDITIONAL_MODEL_KWARGS = {}
 ALL_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {}
     
@@ -155,6 +175,7 @@ BLOOM_MODELS_DTYPES = {
 BLOOM_MODELS_PARAMS = _infer_model_sizes(BLOOM_MODELS_MAPPING)
 BLOOM_MODELS_PARAMS['bloom-176B'] = 190
 BLOOM_MODELS_FAMILY = _map_to_model_family(BLOOM_MODELS_MAPPING, 'bloom')
+BLOOM_MODELS_CONTEXT_SIZE = _map_to_context_size(BLOOM_MODELS_MAPPING, 2048)
 _register_model('BLOOM')
 
 
@@ -171,6 +192,7 @@ DIALO_GPT_MODELS_PARAMS = {
     'dialo-gpt-large': 775/1e3,
 }
 DIALO_GPT_MODELS_FAMILY = _map_to_model_family(DIALO_GPT_MODELS_MAPPING, 'dialo-gpt')
+DIALO_GPT_MODELS_CONTEXT_SIZE = _map_to_context_size(DIALO_GPT_MODELS_MAPPING, 1024)
 _register_model('DIALO_GPT')
 
 
@@ -182,6 +204,7 @@ STABLE_LM_MODELS_MAPPING = {
 STABLE_LM_MODELS_DTYPES = _map_to_dtype(STABLE_LM_MODELS_MAPPING, torch.float16)
 STABLE_LM_MODELS_PARAMS = _infer_model_sizes(STABLE_LM_MODELS_MAPPING)
 STABLE_LM_MODELS_FAMILY = _map_to_model_family(STABLE_LM_MODELS_MAPPING, 'stable-lm')
+STABLE_LM_MODELS_CONTEXT_SIZE = _map_to_context_size(STABLE_LM_MODELS_MAPPING, 4096)
 _register_model('STABLE_LM')
 
 
@@ -200,6 +223,7 @@ STAR_CODER_MODELS_PARAMS = {
     'star-coder-plus': 15.5,
 }
 STAR_CODER_MODELS_FAMILY = _map_to_model_family(STAR_CODER_MODELS_MAPPING, 'star-coder')
+STAR_CODER_MODELS_CONTEXT_SIZE = _map_to_context_size(STAR_CODER_MODELS_MAPPING, 8192)
 STAR_CODER_MODELS_ADDITIONAL_MODEL_KWARGS = {
     'star-coder-base': {'trust_remote_code': True},
 }
@@ -220,6 +244,7 @@ STAR_CHAT_MODELS_PARAMS = {
     'star-chat-beta': 16,
 }
 STAR_CHAT_MODELS_FAMILY = _map_to_model_family(STAR_CHAT_MODELS_MAPPING, 'star-chat')
+STAR_CHAT_MODELS_CONTEXT_SIZE = _map_to_context_size(STAR_CHAT_MODELS_MAPPING, 8192)
 _register_model('STAR_CHAT')
 
 
@@ -236,6 +261,7 @@ GPT2_MODELS_PARAMS = {
     'gpt2-xl': 1.5,
 }
 GPT2_MODELS_FAMILY = _map_to_model_family(GPT2_MODELS_MAPPING, 'gpt2')
+GPT2_MODELS_CONTEXT_SIZE = _map_to_context_size(GPT2_MODELS_MAPPING, 1024)
 _register_model('GPT2')
 
 
@@ -262,6 +288,7 @@ GPT_J_AND_NEO_MODELS_FAMILY = {
     'gpt-neo-2.7B': 'gpt-neo',
     'gpt-neoX-20B': 'gpt-neo',
 }
+GPT_J_AND_NEO_MODELS_CONTEXT_SIZE = _map_to_context_size(GPT_J_AND_NEO_MODELS_MAPPING, 2048)
 _register_model('GPT_J_AND_NEO')
 
 
@@ -279,6 +306,7 @@ OPT_MODELS_MAPPING = {
 OPT_MODELS_DTYPES = _map_to_dtype(OPT_MODELS_MAPPING, torch.float16)
 OPT_MODELS_PARAMS = _infer_model_sizes(OPT_MODELS_MAPPING)
 OPT_MODELS_FAMILY = _map_to_model_family(OPT_MODELS_MAPPING, 'opt')
+OPT_MODELS_CONTEXT_SIZE = _map_to_context_size(OPT_MODELS_MAPPING, 2048)
 _register_model('OPT')
 
 
@@ -292,6 +320,7 @@ CODEGEN_MODELS_MAPPING = {
 CODEGEN_MODELS_DTYPES = _map_to_dtype(CODEGEN_MODELS_MAPPING, torch.float16)
 CODEGEN_MODELS_PARAMS = _infer_model_sizes(CODEGEN_MODELS_MAPPING)
 CODEGEN_MODELS_FAMILY = _map_to_model_family(CODEGEN_MODELS_MAPPING, 'codegen')
+CODEGEN_MODELS_CONTEXT_SIZE = _map_to_context_size(CODEGEN_MODELS_MAPPING, 2048)
 _register_model('CODEGEN')
 
 
@@ -314,6 +343,7 @@ CODEGEN2_MODELS_FAMILY = {
     'codegen25-7B': 'codegen2.5',
     'codegen25-7B-instruct': 'codegen2.5',
 }
+CODEGEN2_MODELS_CONTEXT_SIZE = _map_to_context_size(CODEGEN2_MODELS_MAPPING, 2048)
 CODEGEN2_MODELS_ADDITIONAL_MODEL_KWARGS = {
     'codegen2-1B': {'trust_remote_code': True, 'revision': 'main'},
     'codegen2-3.7B': {'trust_remote_code': True, 'revision': 'main'},
@@ -335,6 +365,7 @@ VICUNA_MODELS_MAPPING = {
 VICUNA_MODELS_DTYPES = _map_to_dtype(VICUNA_MODELS_MAPPING, torch.float16)
 VICUNA_MODELS_PARAMS = _infer_model_sizes(VICUNA_MODELS_MAPPING)
 VICUNA_MODELS_FAMILY = _map_to_model_family(VICUNA_MODELS_MAPPING, 'vicuna1.3')
+VICUNA_MODELS_CONTEXT_SIZE = _map_to_context_size(VICUNA_MODELS_MAPPING, 2048)
 # Fast llama tokenizers are buggy in current transformers versions
 # TODO: may need to be changed in future versions if they correct the bug
 VICUNA_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in VICUNA_MODELS_MAPPING.keys()}
@@ -353,6 +384,7 @@ LLAMA2_MODELS_MAPPING = {
 LLAMA2_MODELS_DTYPES = _map_to_dtype(LLAMA2_MODELS_MAPPING, torch.float16)
 LLAMA2_MODELS_PARAMS = _infer_model_sizes(LLAMA2_MODELS_MAPPING)
 LLAMA2_MODELS_FAMILY = _map_to_model_family(LLAMA2_MODELS_MAPPING, 'llama2')
+LLAMA2_MODELS_CONTEXT_SIZE = _map_to_context_size(LLAMA2_MODELS_MAPPING, 4096)
 # Fast llama tokenizers are buggy in current transformers versions
 # TODO: may need to be changed in future versions if they correct the bug
 LLAMA2_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in LLAMA2_MODELS_MAPPING.keys()}
@@ -374,6 +406,7 @@ CODE_LLAMA_MODELS_MAPPING = {
 CODE_LLAMA_MODELS_DTYPES = _map_to_dtype(CODE_LLAMA_MODELS_MAPPING, torch.bfloat16)
 CODE_LLAMA_MODELS_PARAMS = _infer_model_sizes(CODE_LLAMA_MODELS_MAPPING)
 CODE_LLAMA_MODELS_FAMILY = _map_to_model_family(CODE_LLAMA_MODELS_MAPPING, 'code-llama')
+CODE_LLAMA_MODELS_CONTEXT_SIZE = _map_to_context_size(CODE_LLAMA_MODELS_MAPPING, 4096)
 # Fast llama tokenizers are buggy in current transformers versions
 # TODO: may need to be changed in future versions if they correct the bug
 CODE_LLAMA_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in CODE_LLAMA_MODELS_MAPPING.keys()}
@@ -427,6 +460,26 @@ def get_model_dtype(model_name: str) -> torch.dtype:
         raise ValueError(f'The model name must be one of {*ALLOWED_MODELS,}.')
     
     return ALL_MODELS_DTYPES[model_name]
+
+
+def get_model_context_size(model_name: str) -> int:
+    """Return the maximum context size used by the model.
+
+    Parameters
+    ----------
+    model_name : str
+        The name of the model.
+
+    Returns
+    -------
+    int
+        The context size.
+    """
+
+    if model_name not in ALLOWED_MODELS:
+        raise ValueError(f'The model name must be one of {*ALLOWED_MODELS,}.')
+    
+    return ALL_MODELS_CONTEXT_SIZE[model_name]
 
 
 def estimate_model_gpu_footprint(model_name, quantization_8bits: bool = False, quantization_4bits: bool = False,

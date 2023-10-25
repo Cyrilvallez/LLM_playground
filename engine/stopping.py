@@ -1,8 +1,9 @@
 import re
+from enum import Enum
 
 import torch
 import numpy as np
-from transformers import PreTrainedTokenizerBase, StoppingCriteria
+from transformers import PreTrainedTokenizerBase, StoppingCriteria, StoppingCriteriaList
 
 from engine.code_parser import CodeParser, PythonParser
 
@@ -24,6 +25,77 @@ EXTENDED_CODE_STOP_PATTERNS = CODE_STOP_PATTERNS + (
     '\n>>>',
 )
 
+# Pattern to match out of indentation, i.e. anything that does not start by a space or comment symbol
+OUT_OF_INDENTATION_REGEX = r'^[^#\s]|\n[^#\s]'
+
+# Pattern to match out of assignment, i.e. anything after a newline that does not start by a space
+# (some long assignment may be on multiple lines, but in this case there are spaces between newlines and
+# continuation of the assignment)
+# It will match any newline that are not immediately at the start of the string (double negative look-behind groups)
+OUT_OF_ASSIGNMENT_REGEX = r'(?<!^)(?<!\n)\n[^#\s]'
+
+
+class StoppingType(Enum):
+
+    PYTHON_HUMAN_EVAL = CODE_STOP_PATTERNS
+    PYTHON_HUMAN_EVAL_EXTENDED = EXTENDED_CODE_STOP_PATTERNS
+    OUT_OF_INDENTATION = OUT_OF_INDENTATION_REGEX
+    OUT_OF_ASSIGNMENT = OUT_OF_ASSIGNMENT_REGEX
+
+    def create_stopping_criteria(self, prompt_ids_length: int, tokenizer: PreTrainedTokenizerBase,
+                                 extra_eos_tokens: list[str] | None,
+                                 parser: CodeParser | None = None) -> StoppingCriteria:
+        """Create the stopping criteria associated with the current enum member.
+
+        Parameters
+        ----------
+        prompt_ids_length : int
+            Length of the input ids prompt.
+        tokenizer : PreTrainedTokenizerBase
+            The tokenizer to use to decode the sequences.
+        extra_eos_tokens : list[str] | None
+            List of extra eos tokens.
+        parser : CodeParser | None, optional
+            A parser to extract code from generated sequences. The `stopping_patterns` will be applied on the
+            parsed sequences. This should be used with caution, as it was designed only for chat models that
+            embed code in their output in natural language. The default is None, i.e. no parsing.
+
+        Returns
+        -------
+        StoppingCriteria
+            The stopping criteria.
+        """
+        
+        if isinstance(self.value, list) or isinstance(self.value, tuple):
+            return TextPatternStopping(prompt_ids_length, tokenizer, self.value, extra_eos_tokens, parser)
+        elif isinstance(self.value, str):
+            return RegexPatternStopping(prompt_ids_length, tokenizer, self.value, extra_eos_tokens, parser)
+        else:
+            raise TypeError('Value for the enumeration member is not supported.')
+        
+    
+    def post_process_sequences(self, prompt_truncated_generated_sequences: list[str]) -> list[str]:
+        """Post process the sequences according to the current enum member.
+
+        Parameters
+        ----------
+        prompt_truncated_generated_sequences : list[str]
+            Decoded PROMPT-TRUNCATED outputs of a model. Passing the full decoded outputs may induce errors in the logic.
+
+        Returns
+        -------
+        list[str]
+            The post-processed outputs.
+        """
+
+        if isinstance(self.value, list) or isinstance(self.value, tuple):
+            return post_process_stopping_patterns(prompt_truncated_generated_sequences, self.value)
+        elif isinstance(self.value, str):
+            return post_process_regex_pattern(prompt_truncated_generated_sequences, self.value)
+        else:
+            raise TypeError('Value for the enumeration member is not supported.')
+
+
 
 class TextPatternStopping(StoppingCriteria):
     """Stop generation upon meeting any of the `stopping_patterns` or `extra_eos_tokens`.
@@ -43,14 +115,6 @@ class TextPatternStopping(StoppingCriteria):
 
         if len(self.all_patterns) == 0:
             raise ValueError('You did not provide any patterns or extra eos tokens upon which to stop generation.')
-        
-
-    def __repr__(self):
-        return f'TextPatternStopping{*self.all_patterns,}'
-    
-
-    def __str__(self):
-        return f'{*self.all_patterns,}'
     
 
     def check_patterns(self, generated_sequences: list[str], patterns: tuple[str]) -> list[bool]:
@@ -113,22 +177,19 @@ class TextPatternStopping(StoppingCriteria):
         
 
 
-class OutOfIndentationStopping(StoppingCriteria):
-    """Stop generation if we detect any newline character (or start of string) immeditaly followed by a
-    non-space character (i.e. the code/text is not indented).
-
-    This is useful for HumanEval benchmarks, as it is stronger than just stopping on the `CODE_STOP_PATTERNS`
-    used by default. For example, some models generate the function body correctly, and then generate
-    `\nExplanation:...`, which would not be detected by `CODE_STOP_PATTERNS` but causes resulting code to not compile.
+class RegexPatternStopping(StoppingCriteria):
+    """Stop generation if we detect a match with a given regex pattern.
     """
 
-    def __init__(self, prompt_ids_length: int, tokenizer: PreTrainedTokenizerBase,
-                 extra_eos_tokens: list[str] | None = None):
+    def __init__(self, prompt_ids_length: int, tokenizer: PreTrainedTokenizerBase, regex: str | None,
+                 extra_eos_tokens: list[str] | None = None, parser: CodeParser | None = None):
 
         super().__init__()
         self.prompt_ids_length = prompt_ids_length
         self.tokenizer = tokenizer
+        self.regex = regex
         self.extra_eos_tokens = extra_eos_tokens
+        self.parser = parser
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
 
@@ -141,18 +202,74 @@ class OutOfIndentationStopping(StoppingCriteria):
             # Check for extra eos
             done_eos = any([pattern in sequence for pattern in self.extra_eos_tokens])
             
-            # Check if we find a new line (or start of string) immediately followed by a non-space character
-            # (thus no indentation). However, we allow code commentary character
-            done_indentation = re.search(r'^[^#\s]|\n[^#\s]', sequence) is not None
-
-            done_sequences.append(any([done_eos, done_indentation]))
+            if self.regex is not None:
+                if self.parser is not None:
+                    sequence = self.parser(sequence)
+                done_regex = re.search(self.regex, sequence) is not None
+                done_sequences.append(any([done_eos, done_regex]))
+            else:
+                done_sequences.append(done_eos)
 
         return all(done_sequences)
     
 
 
+def create_stopping_criteria(prompt_ids_length: int, tokenizer: PreTrainedTokenizerBase,
+                             stopping_patterns: StoppingType | list[str] | tuple[str] | str | None,
+                             extra_eos_tokens: list[str] | None,
+                             parser: CodeParser | None = None) -> StoppingCriteriaList | None:
+    """Create the correct stopping criteria depending on the value and type of `stopping_patterns`.
+
+    Parameters
+    ----------
+    prompt_ids_length : int
+        Length of the input ids prompt.
+    tokenizer : PreTrainedTokenizerBase
+        The tokenizer to use to decode the sequences.
+    stopping_patterns : StoppingType | list[str] | tuple[str] | str | None
+        The type of early stopping to use. This should be an instance of the `StoppingType` enum, or eventually
+        a list or tuple of str, in which case the iterable will be passed to a `TextPatternStopping` instance. It can
+        also be a str, which is interpreted as a regex and is passed to a `RegexPatternStopping` instance. If
+        `None`, only the `extra_eos_tokens` will be used for early stopping.
+    extra_eos_tokens : list[str] | None
+        List of extra eos tokens.
+    parser : CodeParser | None, optional
+        A parser to extract code from generated sequences. The `stopping_patterns` will be applied on the
+        parsed sequences. This should be used with caution, as it was designed only for chat models that
+        embed code in their output in natural language. The default is None, i.e. no parsing.
+
+    Returns
+    -------
+    StoppingCriteriaList | None
+        The stopping criteria.
+    """
+    
+    if isinstance(stopping_patterns, StoppingType):
+        criteria = stopping_patterns.create_stopping_criteria(prompt_ids_length, tokenizer, extra_eos_tokens, parser)
+        
+    elif isinstance(stopping_patterns, list) or isinstance(stopping_patterns, tuple):
+        criteria = TextPatternStopping(prompt_ids_length, tokenizer, stopping_patterns, extra_eos_tokens, parser)
+
+    elif isinstance(stopping_patterns, str):
+        criteria = RegexPatternStopping(prompt_ids_length, tokenizer, stopping_patterns, extra_eos_tokens, parser)
+
+    elif stopping_patterns is None:
+        if len(extra_eos_tokens) == 0:
+            criteria = None
+        else:
+            criteria = TextPatternStopping(prompt_ids_length, tokenizer, None, extra_eos_tokens, parser)
+
+    else:
+        raise TypeError('Cannot infer stopping criteria based on the type of stopping patterns.')
+    
+    criteria_list = StoppingCriteriaList([criteria]) if criteria is not None else None
+    
+    return criteria_list
+
+
+
 def post_process_stopping_patterns(prompt_truncated_generated_sequences: list[str],
-                                   stopping_patterns: list[str] | tuple[str] | None = EXTENDED_CODE_STOP_PATTERNS) -> list[str]:
+                                   stopping_patterns: list[str] | tuple[str] | None) -> list[str]:
     """Post-process the outputs of a model to truncate according to a list of patterns upon which we stop
     generation (this is needed because the StoppingCriteria cannot immediately stop the generation of each
     sequence upon meeting a pattern in the case of more than 1 `num_return_sequences`).
@@ -161,8 +278,8 @@ def post_process_stopping_patterns(prompt_truncated_generated_sequences: list[st
     ----------
     prompt_truncated_generated_sequences : list[str]
         Decoded PROMPT-TRUNCATED outputs of a model. Passing the full decoded outputs may induce errors in the logic.
-    stopping_patterns : list[str] | tuple[tr] | None, optional
-        The list of patterns to use to stop generation, by default EXTENDED_CODE_STOP_PATTERNS
+    stopping_patterns : list[str] | tuple[tr] | None,
+        The list of patterns to use to stop generation.
 
     Returns
     -------
@@ -189,6 +306,42 @@ def post_process_stopping_patterns(prompt_truncated_generated_sequences: list[st
 
         curated_sequence = sequence[0:stop_index]
         generated_sequences_curated.append(curated_sequence)
+
+    return generated_sequences_curated
+
+
+
+def post_process_regex_pattern(prompt_truncated_generated_sequences: list[str], regex: str | None) -> list[str]:
+    """Post-process the outputs of a model to truncate according to a regex pattern (this is needed because
+    the StoppingCriteria cannot immediately stop the generation of each sequence upon meeting a pattern in the
+    case of more than 1 `num_return_sequences`).
+
+    Parameters
+    ----------
+    prompt_truncated_generated_sequences : list[str]
+        Decoded PROMPT-TRUNCATED outputs of a model. Passing the full decoded outputs may induce errors in the logic.
+    regex : str | None
+        Pattern to match.
+
+    Returns
+    -------
+    list[str]
+        The truncated outputs to meet the criteria of out of indentation.
+    """
+
+    # If there are no regex
+    if regex is None:
+        return prompt_truncated_generated_sequences
+    
+    generated_sequences_curated = []
+    
+    for sequence in prompt_truncated_generated_sequences:
+
+        match = re.search(regex, sequence)
+        if match is not None:
+            generated_sequences_curated.append(sequence[0:match.start()])
+        else:
+            generated_sequences_curated.append(sequence)
 
     return generated_sequences_curated
 
@@ -243,8 +396,8 @@ def post_process_extra_eos_tokens(prompt_truncated_outputs: torch.Tensor, pad_to
 
 
 def post_process_sequences(prompt_truncated_outputs: torch.Tensor, tokenizer: PreTrainedTokenizerBase,
-                           stopping_patterns: list[str] | tuple[str] | None = EXTENDED_CODE_STOP_PATTERNS,
-                           extra_eos_tokens: list[str] | None = None, parser: CodeParser | None = None) -> list[str]:
+                           stopping_patterns: StoppingType | list[str] | tuple[str] | str | None,
+                           extra_eos_tokens: list[str] | None, parser: CodeParser | None = None) -> list[str]:
     """Apply all steps of post-processing to the prompt-truncated outputs of a model.
 
     Parameters
@@ -253,14 +406,17 @@ def post_process_sequences(prompt_truncated_outputs: torch.Tensor, tokenizer: Pr
         The PROMPT-TRUNCATED output of a model. Passing the full outputs may induce errors in the logic.
     tokenizer : PreTrainedTokenizerBase
         The tokenizer used by the model.
-    stopping_patterns : list[str] | tuple[tr] | None, optional
-        The list of patterns to use to stop generation, by default EXTENDED_CODE_STOP_PATTERNS
-    extra_eos_tokens : list[str] | None, optional
-        The list of extra eos tokens, by default None
-    parser: CodeParser | None, optional
-            A parser to extract code from generated sequences. This should be used with caution, as it was
-            designed only for chat models that embed code in their output in natural language.
-            The default is None, i.e. no parsing.
+    stopping_patterns : StoppingType | list[str] | tuple[str] | str | None
+        The type of early stopping to use. This should be an instance of the `StoppingType` enum, or eventually
+        a list or tuple of str, in which case the iterable will be passed to a `TextPatternStopping` instance. It can
+        also be a str, which is interpreted as a regex and is passed to a `RegexPatternStopping` instance. If
+        `None`, only the `extra_eos_tokens` will be used for early stopping.
+    extra_eos_tokens : list[str] | None
+        List of extra eos tokens.
+    parser : CodeParser | None, optional
+        A parser to extract code from generated sequences. The `stopping_patterns` will be applied on the
+        parsed sequences. This should be used with caution, as it was designed only for chat models that
+        embed code in their output in natural language. The default is None, i.e. no parsing.
 
     Returns
     -------
@@ -276,37 +432,24 @@ def post_process_sequences(prompt_truncated_outputs: torch.Tensor, tokenizer: Pr
     # can later use tokenizer.batch_decode(..., skip_special_tokens=True), i.e. easily remove all the 
     # special tokens
     processed_outputs = post_process_extra_eos_tokens(prompt_truncated_outputs, pad_token_id, extra_eos_tokens_ids)
+
     # Decode sequences
     prompt_truncated_sequences = tokenizer.batch_decode(processed_outputs, skip_special_tokens=True)
+
     # Parse sequences
     if parser is not None:
         prompt_truncated_sequences = [parser(sequence) for sequence in prompt_truncated_sequences]
-    # Truncate according to stopping patterns
-    final_sequences = post_process_stopping_patterns(prompt_truncated_sequences, stopping_patterns)
+
+    # Truncate according to stopping pattern
+    if isinstance(stopping_patterns, StoppingType):
+        final_sequences = stopping_patterns.post_process_sequences(prompt_truncated_sequences)
+    elif isinstance(stopping_patterns, list) or isinstance(stopping_patterns, tuple):
+        final_sequences = post_process_stopping_patterns(prompt_truncated_sequences, stopping_patterns)
+    elif isinstance(stopping_patterns, str):
+        final_sequences = post_process_regex_pattern(prompt_truncated_sequences, stopping_patterns)
+    elif stopping_patterns is None:
+        final_sequences = prompt_truncated_sequences
+    else:
+        raise TypeError('Cannot post process outputs based on the type of stopping patterns.')
 
     return final_sequences
-
-
-
-def parse_code_and_truncate(generated_sequences: list[str], parser: CodeParser = PythonParser(),
-                            stopping_patterns: list[str] | tuple[str] | None = EXTENDED_CODE_STOP_PATTERNS) -> list[str]:
-    """Extract code from `generated_sequences`, and truncate according to `stopping_patterns`.
-
-    Parameters
-    ----------
-    generated_sequences : list[str]
-        The sequences to process.
-    parser : CodeParser
-        A parser that extract code from strings.
-    stopping_patterns : list[str] | tuple[tr] | None, optional
-        The list of patterns to use to stop generation, by default EXTENDED_CODE_STOP_PATTERNS
-
-    Returns
-    -------
-    list[str]
-        Code output.
-    """
-    
-    parsed_sequences = [parser(sequence) for sequence in generated_sequences]
-    truncated_sequences = post_process_stopping_patterns(parsed_sequences, stopping_patterns)
-    return truncated_sequences

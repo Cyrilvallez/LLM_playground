@@ -185,54 +185,6 @@ class HFModel(object):
         return formatted_prompt
     
 
-    def create_stopping_criteria(self,
-                                 input_length: int,
-                                 stopping_patterns: list[str] | tuple[str] | bool | None = None,
-                                 parser: CodeParser | None = None
-        ) -> tuple[StoppingCriteriaList | None, tuple[str] | list[str] | None]:
-        """Create the stopping criteria to use from the `stopping_patterns`.
-
-        Parameters
-        ----------
-        input_length : int
-            Length of the input prompt.
-        stopping_patterns : list[str] | tuple[str] | bool | None, optional
-            List of words/patterns to stop the generation. Pass `True` to use the default 
-            `EXTENDED_CODE_STOP_PATTERNS` patterns. If `None`, no early stopping is performed, by default None.
-        parser: CodeParser | None, optional
-            A parser to extract code from generated sequences. The `stopping_patterns` will be applied on the
-            parsed sequences. This should be used with caution, as it was designed only for chat models that
-            embed code in their output in natural language. The default is None, i.e. no parsing.
-
-        Returns
-        -------
-        tuple[StoppingCriteriaList | None, tuple[str] | list[str] | None]
-            Tuple containing the stopping criteria to use in the model forward, and the stopping patterns
-            to use if we post-process the outputs.
-        """
-
-        # Possible early stopping
-        if isinstance(stopping_patterns, list) or isinstance(stopping_patterns, tuple):
-            stopping_criteria = stopping.TextPatternStopping(input_length, self.tokenizer, stopping_patterns,
-                                                             self.extra_eos_tokens, parser)
-            stopping_criteria = StoppingCriteriaList([stopping_criteria])
-        elif isinstance(stopping_patterns, bool) and stopping_patterns:
-            stopping_patterns = stopping.EXTENDED_CODE_STOP_PATTERNS
-            stopping_criteria = stopping.TextPatternStopping(input_length, self.tokenizer, stopping_patterns,
-                                                             self.extra_eos_tokens, parser)
-            stopping_criteria = StoppingCriteriaList([stopping_criteria])
-        else:
-            stopping_patterns = None
-            if len(self.extra_eos_tokens) == 0:
-                stopping_criteria = None
-            else:
-                stopping_criteria = stopping.TextPatternStopping(input_length, self.tokenizer, stopping_patterns,
-                                                                 self.extra_eos_tokens, parser)
-                stopping_criteria = StoppingCriteriaList([stopping_criteria])
-
-        return stopping_criteria, stopping_patterns
-    
-
     def create_generation_config(self, max_new_tokens: int, min_new_tokens: int, do_sample: bool,
                                  top_k: int | None, top_p: float | None, temperature: float) -> GenerationConfig:
         """Create a new `GenerationConfig` object to pass to `model.generate()` to control the generation strategy.
@@ -334,7 +286,7 @@ class HFModel(object):
             num_return_sequences: int = 1,
             batch_size: int | None = None,
             seed: int | None = None,
-            stopping_patterns: tuple[str] | bool | None = None,
+            stopping_patterns: stopping.StoppingType | list[str] | tuple[str] | str | None = None,
             parser: CodeParser | None = None,
             truncate_prompt_from_output: bool = True,
             post_process_output: bool = True,
@@ -390,9 +342,11 @@ class HFModel(object):
             try to determine the largest possible batch size that does not result in memory error. By default None.
         seed : int | None, optional
             An optional seed to force the generation to be reproducible.
-        stopping_patterns: tuple[str] | bool | None, optional
-            List of words/patterns to stop the generation. Pass `True` to use the default `EXTENDED_CODE_STOP_PATTERNS` patterns.
-            If `None`, no early stopping is performed, by default None.
+        stopping_patterns : StoppingType | list[str] | tuple[str] | str | None = None
+            The type of early stopping to use. This should be an instance of the `StoppingType` enum, or eventually
+            a list or tuple of str, in which case the iterable will be passed to a `TextPatternStopping` instance. It can
+            also be a str, which is interpreted as a regex and is passed to a `RegexPatternStopping` instance. If
+            `None`, only the `extra_eos_tokens` will be used for early stopping. By default `None`.
         parser: CodeParser | None, optional
             A parser to extract code from generated sequences. The final outputs will only consist of the parsed
             sequences if `post_process_output` is True. Also, the `stopping_patterns` will be applied on the
@@ -447,9 +401,8 @@ class HFModel(object):
             input = input.to(device=self.input_device)
 
         # Create the stopping criteria
-        stopping_criteria, stopping_patterns = self.create_stopping_criteria(input_length,
-                                                                             stopping_patterns=stopping_patterns,
-                                                                             parser=parser)
+        stopping_criteria = stopping.create_stopping_criteria(input_length, self.tokenizer, stopping_patterns,
+                                                              self.extra_eos_tokens, parser)
 
         # Infer batch size if not given
         if batch_size is None:
@@ -496,7 +449,7 @@ class HFModel(object):
                 generated_batch = stopping.post_process_sequences(truncated_outputs, self.tokenizer, stopping_patterns,
                                                                   self.extra_eos_tokens, parser)
             else:
-                generated_batch = self.tokenizer.batch_decode(truncated_outputs, skip_special_tokens=False)
+                generated_batch = self.tokenizer.batch_decode(truncated_outputs, skip_special_tokens=True)
             
             # reattach the prompt if needed
             if not truncate_prompt_from_output:
@@ -667,7 +620,7 @@ class HFModel(object):
     def generate_conversation(
             self,
             prompt: str,
-            system_prompt: str = '',
+            system_prompt: str | None = None,
             conv_history: GenericConversation | None = None,
             max_new_tokens: int = 60,
             min_new_tokens: int = 5,
@@ -685,8 +638,9 @@ class HFModel(object):
         ----------------
         prompt : str
             The new prompt of the user to the model.
-        system_prompt : str
-            An optional system prompt to guide the style of the model answers.
+        system_prompt : str | None
+            An optional system prompt to guide the style of the model answers. The default is `None` which uses
+            the default template system prompt.
         conv_history : GenericConversation | None
             An optional existing conversation object, representing the current dialogue between the user and
             the model.
@@ -737,20 +691,26 @@ class HFModel(object):
             conv_history = self.get_empty_conversation()
 
         # Set system prompt
-        conv_history.set_system_prompt(system_prompt)
+        if system_prompt is not None:
+            conv_history.set_system_prompt(system_prompt)
 
         # Add the prompt to the current conversation
         conv_history.append_user_message(prompt)
 
         # Generate and tokenize the full prompt
-        full_prompt = conv_history.get_prompt()
+        if truncate_if_conv_too_long:
+            truncated_conv = self.truncate_conversation(conv_history, max_new_tokens, continuation=False)
+            full_prompt = truncated_conv.get_prompt()
+        else:
+            full_prompt = conv_history.get_prompt()
         input = self.tokenizer.encode(full_prompt, return_tensors='pt')
         input_length = input.shape[-1]
         if torch.cuda.is_available():
             input = input.to(device=self.input_device)
 
         # Create the stopping criteria in case the model has some extra eos tokens to process
-        stopping_criteria, _ = self.create_stopping_criteria(input_length)
+        stopping_criteria  = stopping.create_stopping_criteria(input_length, self.tokenizer, None,
+                                                               self.extra_eos_tokens, None)
 
         outputs = self.model.generate(input, generation_config=generation_config, stopping_criteria=stopping_criteria,
                                       num_return_sequences=1, **kwargs)
@@ -766,9 +726,189 @@ class HFModel(object):
         conv_history.append_model_message(response[0])
 
         return conv_history
+    
+
+
+    def continue_last_conversation_turn(
+            self,
+            conv_history: GenericConversation,
+            max_new_tokens: int = 60,
+            do_sample: bool = True,
+            top_k: int = 50,
+            top_p: float = 0.90,
+            temperature: float = 0.9,
+            seed: int | None = None,
+            truncate_if_conv_too_long: bool = True,
+            **kwargs
+    ) -> GenericConversation:
+        """Continue the last conversation turn if the model stopped too early due to `max_new_tokens` being too
+        low.
+
+        Input parameters
+        ----------------
+        conv_history : GenericConversation
+            An existing conversation object, representing the current dialogue between the user and
+            the model.
+
+        Generation parameters
+        ---------------------
+
+        max_new_tokens : int, optional
+            How many new tokens to generate, by default 60.
+        do_sample : bool, optional
+            Whether to introduce randomness in the generation, by default True.
+        top_k : int | None, optional
+            How many tokens with max probability to consider for random sampling, by default 50. Not used if 
+            `do_sample=False`. You can deactivate top_k sampling by providing `top_k=0` or `top_k=None`. Note 
+            that if you provide both `top_k` and `top_p`, the `top_k` is applied before.
+        top_p : float | None, optional
+            The probability density covering the new tokens to consider for random sampling, by default 0.9. Not used if 
+            `do_sample=False`. You can deactivate top_p sampling by providing `top_p=1` or `top_p=None`. Note 
+            that if you provide both `top_k` and `top_p`, the `top_k` is applied before.
+        temperature : float, optional
+            How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
+            no randomness), by default 0.9. Passing 0 is equivalent to setting `do_sample=False`.
+        seed : int | None, optional
+            An optional seed to force the generation to be reproducible.
+        truncate_if_conv_too_long : bool, optional
+            Whether to truncate the conversation history if it becomes larger than the model maximum capacity,
+            by default True.
+
+        Returns
+        -------
+        GenericConversation
+            A conversation object, with the dialogue history updated with the current turn.
+        """
+
+        if seed is not None:
+            utils.set_all_seeds(seed)
+
+        # Override the default `self.model.generation_config` with our config to be sure of the generation mode
+        generation_config = self.create_generation_config(max_new_tokens=max_new_tokens, min_new_tokens=0,
+                                                          do_sample=do_sample, top_k=top_k, top_p=top_p,
+                                                          temperature=temperature)
+
+        # Generate and tokenize the full prompt
+        if truncate_if_conv_too_long:
+            truncated_conv = self.truncate_conversation(conv_history, max_new_tokens, continuation=True)
+            full_prompt = truncated_conv.get_last_turn_continuation_prompt()
+        else:
+            full_prompt = conv_history.get_last_turn_continuation_prompt()
+        input = self.tokenizer.encode(full_prompt, return_tensors='pt')
+        input_length = input.shape[-1]
+        if torch.cuda.is_available():
+            input = input.to(device=self.input_device)
+
+        # Create the stopping criteria in case the model has some extra eos tokens to process
+        stopping_criteria  = stopping.create_stopping_criteria(input_length, self.tokenizer, None,
+                                                               self.extra_eos_tokens, None)
+
+        outputs = self.model.generate(input, generation_config=generation_config, stopping_criteria=stopping_criteria,
+                                      num_return_sequences=1, **kwargs)
+                
+        # Truncate the prompt from the output
+        truncated_outputs = outputs[:, input_length:]
+
+        # TODO: Maybe find better way to make up for the spaces (this works for llama2 and vicuna/llama1)
+        # Other model should in general never generate this token so it is still a safe way to do it
+        first_token = self.tokenizer.convert_ids_to_tokens(int(truncated_outputs[0, 0]))
+        llama_space_character = b'\xe2\x96\x81'.decode()
+        if first_token.startswith(llama_space_character):
+            add_space = True
+        else:
+            add_space = False
+
+        # Post-process the sequences according to potential extra eos tokens
+        response = stopping.post_process_sequences(truncated_outputs, self.tokenizer, stopping_patterns=None,
+                                                   extra_eos_tokens=self.extra_eos_tokens)
+        
+        # Append output to the conv
+        if add_space:
+            conv_history.append_to_last_model_message(' ' + response[0])
+        else:
+            conv_history.append_to_last_model_message(response[0])
+
+        return conv_history
 
 
     def get_empty_conversation(self) -> GenericConversation:
         """Return a new empty conversation with the template of the current model."""
         return get_conversation_template(self.model_name)
+    
+
+    def get_context_size(self) -> int:
+        """Return the maximum context size for the current model."""
+        return loader.get_model_context_size(self.model_name)
    
+
+    def truncate_conversation(self, conversation: GenericConversation, max_new_tokens: int,
+                              continuation: bool = False) -> GenericConversation:
+        """Truncate the current conversation by removing the oldest messages so that the length of the prompt
+        + the `max_new_tokens` fit the maximum context length that the model can handle.
+
+        Parameters
+        ----------
+        conversation : GenericConversation
+            The current conversation.
+        max_new_tokens : int
+            How many new tokens to generate.
+        continuation : bool, optional
+            Whether we continue the last conversation turn, or create a new one. By default `False`.
+
+        Returns
+        -------
+        GenericConversation
+            The truncated conversation.
+        """
+
+        if len(conversation) == 0:
+            raise ValueError('Cannot truncate an empty conversation.')
+        
+        context_size = self.get_context_size()
+
+        new_conv = copy.deepcopy(conversation)
+        if continuation:
+            full_prompt = new_conv.get_last_turn_continuation_prompt()
+        else:
+            full_prompt = new_conv.get_prompt()
+        input = self.tokenizer.encode(full_prompt, return_tensors='pt')
+        input_length = input.shape[-1]
+
+        while input_length + max_new_tokens >= context_size:
+            del new_conv.user_history_text[0]
+            del new_conv.model_history_text[0]
+
+            if len(new_conv) == 0:
+                raise RuntimeError('The entire conversation got truncated to fit the context size.')
+
+            if continuation:
+                full_prompt = new_conv.get_last_turn_continuation_prompt()
+            else:
+                full_prompt = new_conv.get_prompt()
+            input = self.tokenizer.encode(full_prompt, return_tensors='pt')
+            input_length = input.shape[-1]
+
+        return new_conv
+
+
+
+
+
+def expand_past_keys(past_key_values, batch_size):
+
+    if batch_size <=1:
+        return past_key_values
+    
+    new = []
+    with torch.no_grad():
+        for i in range(len(past_key_values)):
+            new_ = []
+            for j in range(len(past_key_values[i])):
+                new_.append(past_key_values[i][j].repeat(batch_size, 1, 1))
+            new.append(tuple(new_))
+
+    return tuple(new)
+
+
+
+
