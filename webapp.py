@@ -33,7 +33,7 @@ LOGGERS_TEXT = {}
 LOGGERS_CHAT = {}
 
 
-def update_model(conversation: GenericConversation, model_name: str, quantization_8bits: bool = False,
+def update_model(conversation: GenericConversation, username: str | None, model_name: str, quantization_8bits: bool = False,
                  quantization_4bits: bool = False) -> tuple[GenericConversation, str, str, str, str, list[list]]:
     """Update the model in the global scope.
 
@@ -41,6 +41,8 @@ def update_model(conversation: GenericConversation, model_name: str, quantizatio
     ----------
     conversation : GenericConversation
         Current conversation. This is the value inside a gr.State instance.
+    username : str | None
+        Username of current user if any.
     model_name : str
         The new model name.
     quantization_8bits : bool, optional
@@ -86,6 +88,8 @@ def update_model(conversation: GenericConversation, model_name: str, quantizatio
         raise gr.Error(f'The following error happened during loading: {repr(e)}. Please retry or choose another one.')
     
     new_conv = MODEL.get_empty_conversation()
+    if username is not None:
+        CACHED_CONVERSATIONS[username] = new_conv
     
     # Return values to clear the input and output textboxes, and input and output chatbot boxes
     return new_conv, new_conv.id, '', '', '', [[None, None]]
@@ -436,12 +440,12 @@ def clear_chatbot(username: str | None) -> tuple[GenericConversation, str, list[
         Corresponds to the tuple of components (conversation, output_chat, conv_id)
     """
 
-    # Create new global conv object (we need a new unique id)
+    # Create new conv object (we need a new unique id)
     conversation = MODEL.get_empty_conversation()
     if username is not None:
         CACHED_CONVERSATIONS[username] = conversation
 
-    return conversation, conversation.to_gradio_format(), conversation.id,
+    return conversation, conversation.to_gradio_format(), conversation.id
 
 
 
@@ -533,20 +537,22 @@ load_button = gr.Button('Load model', variant='primary')
 prompt_text = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
 output_text = gr.Textbox(label='Model output')
 generate_button_text = gr.Button('▶️ Submit', variant='primary')
-clear_button_text = gr.Button('🗑 Clear prompt', variant='secondary')
+clear_button_text = gr.Button('🗑 Clear', variant='secondary')
 
 # Define elements of the chatbot Tab
 prompt_chat = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
 output_chat = gr.Chatbot(label='Conversation')
 generate_button_chat = gr.Button('▶️ Submit', variant='primary')
-continue_button_chat = gr.Button('🔂 Continue last answer', variant='primary')
+continue_button_chat = gr.Button('🔂 Continue', variant='primary')
 retry_button_chat = gr.Button('🔄 Retry', variant='primary')
-clear_button_chat = gr.Button('🗑 Clear conversation')
+clear_button_chat = gr.Button('🗑 Clear')
 
 
 conversation = gr.State(MODEL.get_empty_conversation())
-username = gr.State(None)
-conv_id = gr.State('')
+# Define NON-VISIBLE elements: they are only used to keep track of variables and save them to the callback (States
+# cannot be used in callbacks).
+username = gr.Textbox('', label='Username', visible=False)
+conv_id = gr.Textbox('', label='Conversation id', visible=False)
 
 # Define the inputs for the main inference
 inputs_to_simple_generation = [prompt_text, max_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
@@ -557,7 +563,7 @@ inputs_to_chatbot_retry = [conversation, max_new_tokens, do_sample, top_k, top_p
 # Define inputs for the logging callbacks
 inputs_to_text_callback = [model_name, quantization_8bits, quantization_4bits, username,
                            *inputs_to_simple_generation, output_text]
-inputs_to_chat_callback = [model_name, quantization_8bits, quantization_4bits, username, conversation, conv_id,
+inputs_to_chat_callback = [model_name, quantization_8bits, quantization_4bits, username, output_chat, conv_id,
                            max_new_tokens, max_additional_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
 
 gpu_debug = gr.Markdown(value=print_gpu_debug())
@@ -646,7 +652,7 @@ with demo:
             with gr.Accordion("GPU resources (debug purpose)", open=False):
                 gpu_debug.render()
 
-                
+
 
     # Perform simple text generation when clicking the button
     generate_event1 = generate_button_text.click(text_generation, inputs=inputs_to_simple_generation,
@@ -680,13 +686,13 @@ with demo:
                             else None, inputs=inputs_to_chat_callback, preprocess=False)
 
     # Switch the model loaded in memory when clicking
-    load_button.click(update_model, inputs=[conversation, model_name, quantization_8bits, quantization_4bits],
+    load_button.click(update_model, inputs=[conversation, username, model_name, quantization_8bits, quantization_4bits],
                       outputs=[conversation, conv_id, prompt_text, output_text, prompt_chat, output_chat],
                       cancels=[generate_event1, generate_event2, generate_event3])
     
     # Clear the prompt and output boxes when clicking the button
     clear_button_text.click(lambda: ['', ''], outputs=[prompt_text, output_text], queue=False)
-    clear_button_chat.click(clear_chatbot, inputs=[username], outputs=[prompt_chat, output_chat], queue=False)
+    clear_button_chat.click(clear_chatbot, inputs=[username], outputs=[conversation, output_chat, conv_id], queue=False)
 
     # Change visibility of generation parameters if we perform greedy search
     do_sample.input(lambda value: [gr.update(visible=value) for _ in range(5)], inputs=do_sample,
