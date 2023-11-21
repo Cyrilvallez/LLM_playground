@@ -80,7 +80,7 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
         # This will update `conversation` in-place
         future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                                 temperature=temperature, seed=seed, streamer=streamer)
+                                 temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
         
         # Get results from the streamer and yield it
         try:
@@ -193,13 +193,13 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
     conversation : GenericConversation
         Current conversation. This is the value inside a gr.State instance.
     max_new_tokens : int
-        How many new tokens to generate, by default 512.
+        How many new tokens to generate.
     do_sample : bool
-        Whether to introduce randomness in the generation, by default True.
+        Whether to introduce randomness in the generation.
     top_k : int
-        How many tokens with max probability to consider for randomness, by default 50.
+        How many tokens with max probability to consider for randomness.
     top_p : float
-        The probability density covering the new tokens to consider for randomness, by default 0.90.
+        The probability density covering the new tokens to consider for randomness.
     temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
         no randomness).
@@ -236,7 +236,7 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
         # This will update `conversation` in-place
         future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                                 temperature=temperature, seed=seed, streamer=streamer)
+                                 temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
         
         # Get results from the streamer and yield it
         try:
