@@ -33,8 +33,8 @@ LOGGERS_TEXT = {}
 LOGGERS_CHAT = {}
 
 
-def update_model(conversation: GenericConversation, username: str, model_name: str, quantization_8bits: bool = False,
-                 quantization_4bits: bool = False) -> tuple[GenericConversation, str, str, str, str, list[list]]:
+def update_model(conversation: GenericConversation, username: str, model_name: str, quantization_8bits: bool,
+                 quantization_4bits: bool) -> tuple[GenericConversation, str, str, str, str, list[list]]:
     """Update the model in the global scope.
 
     Parameters
@@ -45,10 +45,10 @@ def update_model(conversation: GenericConversation, username: str, model_name: s
         Username of current user if any.
     model_name : str
         The new model name.
-    quantization_8bits : bool, optional
-        Whether to load in 8 bits, by default False
-    quantization_4bits : bool, optional
-        Whether to load in 4 bits, by default False
+    quantization_8bits : bool
+        Whether to load in 8 bits,.
+    quantization_4bits : bool
+        Whether to load in 4 bits.
 
     Returns
     -------
@@ -95,29 +95,28 @@ def update_model(conversation: GenericConversation, username: str, model_name: s
     return new_conv, new_conv.id, '', '', '', [[None, None]]
 
 
-def text_generation(prompt: str, max_new_tokens: int = 512, do_sample: bool = True, top_k: int = 50,
-                    top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
-                    seed: int | None = None) -> str:
+def text_generation(prompt: str, max_new_tokens: int, do_sample: bool, top_k: int, top_p: float,
+                    temperature: float, use_seed: bool, seed: int) -> str:
     """Text generation.
 
     Parameters
     ----------
     prompt : str
         The prompt to the model.
-    max_new_tokens : int, optional
-        How many new tokens to generate, by default 60.
-    do_sample : bool, optional
-        Whether to introduce randomness in the generation, by default True.
-    top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 512.
-    top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.9.
-    temperature : float, optional
+    max_new_tokens : int
+        How many new tokens to generate.
+    do_sample : bool
+        Whether to introduce randomness in the generation.
+    top_k : int,
+        How many tokens with max probability to consider for randomness.
+    top_p : float
+        The probability density covering the new tokens to consider for randomness.
+    temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.8.
-    use_seed : bool, optional
-        Whether to use a fixed seed for reproducibility, by default False.
-    seed : Union[None, int], optional
+        no randomness).
+    use_seed : bool
+        Whether to use a fixed seed for reproducibility.
+    seed : int
         An optional seed to force the generation to be reproducible.
     Returns
     -------
@@ -162,9 +161,9 @@ def text_generation(prompt: str, max_new_tokens: int = 512, do_sample: bool = Tr
         yield prompt + generated_text
 
 
-def chat_generation(conversation: GenericConversation, prompt: str, max_new_tokens: int = 512, do_sample: bool = True,
-                    top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
-                    seed: int | None = None) -> tuple[str, GenericConversation, list[list]]:
+def chat_generation(conversation: GenericConversation, prompt: str, max_new_tokens: int, do_sample: bool,
+                    top_k: int, top_p: float, temperature: float, use_seed: bool,
+                    seed: int) -> tuple[str, GenericConversation, list[list]]:
     """Chat generation.
 
     Parameters
@@ -173,20 +172,20 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
         Current conversation. This is the value inside a gr.State instance.
     prompt : str
         The prompt to the model.
-    max_new_tokens : int, optional
-        How many new tokens to generate, by default 512.
-    do_sample : bool, optional
-        Whether to introduce randomness in the generation, by default True.
-    top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 50.
-    top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.90.
-    temperature : float, optional
+    max_new_tokens : int
+        How many new tokens to generate.
+    do_sample : bool
+        Whether to introduce randomness in the generation.
+    top_k : int
+        How many tokens with max probability to consider for randomness.
+    top_p : float
+        The probability density covering the new tokens to consider for randomness.
+    temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.8.
-    use_seed : bool, optional
-        Whether to use a fixed seed for reproducibility., by default False.
-    seed : Union[None, int], optional
+        no randomness).
+    use_seed : bool
+        Whether to use a fixed seed for reproducibility.
+    seed : int
         An optional seed to force the generation to be reproducible.
 
     Returns
@@ -212,7 +211,7 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
         # This will update `conversation` in-place
         future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                                 temperature=temperature, seed=seed, streamer=streamer)
+                                 temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
         
         # Get results from the streamer and yield it
         try:
@@ -240,29 +239,29 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
 
 
 
-def continue_generation(conversation: GenericConversation, additional_max_new_tokens: int = 128, do_sample: bool = True,
-                        top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
-                        seed: int | None = None) -> tuple[GenericConversation, list[list]]:
+def continue_generation(conversation: GenericConversation, additional_max_new_tokens: int, do_sample: bool,
+                        top_k: int, top_p: float, temperature: float, use_seed: bool,
+                        seed: int) -> tuple[GenericConversation, list[list]]:
     """Continue the last turn of the model output.
 
     Parameters
     ----------
     conversation : GenericConversation
         Current conversation. This is the value inside a gr.State instance.
-    additional_max_new_tokens : int, optional
-        How many new tokens to generate, by default 128.
-    do_sample : bool, optional
-        Whether to introduce randomness in the generation, by default True.
-    top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 50.
-    top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.90.
-    temperature : float, optional
+    additional_max_new_tokens : int
+        How many new tokens to generate.
+    do_sample : bool
+        Whether to introduce randomness in the generation.
+    top_k : int,
+        How many tokens with max probability to consider for randomness.
+    top_p : float
+        The probability density covering the new tokens to consider for randomness.
+    temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.8.
-    use_seed : bool, optional
-        Whether to use a fixed seed for reproducibility., by default False.
-    seed : Union[None, int], optional
+        no randomness).
+    use_seed : bool
+        Whether to use a fixed seed for reproducibility.
+    seed : int
         An optional seed to force the generation to be reproducible.
 
     Returns
@@ -270,6 +269,9 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
     tuple[str, list[list]
         Components (conversation, output_chat).
     """
+
+    if not use_seed:
+        seed = None
 
     timeout = 20
 
@@ -312,29 +314,29 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
 
 
 
-def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int = 512, do_sample: bool = True,
-                          top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
-                          seed: int | None = None) -> tuple[GenericConversation, list[list]]:
+def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int, do_sample: bool,
+                          top_k: int, top_p: float, temperature: float, use_seed: bool,
+                          seed: int) -> tuple[GenericConversation, list[list]]:
     """Chat generation.
 
     Parameters
     ----------
     conversation : GenericConversation
         Current conversation. This is the value inside a gr.State instance.
-    max_new_tokens : int, optional
-        How many new tokens to generate, by default 512.
-    do_sample : bool, optional
-        Whether to introduce randomness in the generation, by default True.
-    top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 50.
-    top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.90.
-    temperature : float, optional
+    max_new_tokens : int
+        How many new tokens to generate.
+    do_sample : bool
+        Whether to introduce randomness in the generation.
+    top_k : int
+        How many tokens with max probability to consider for randomness.
+    top_p : float
+        The probability density covering the new tokens to consider for randomness.
+    temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.8.
-    use_seed : bool, optional
-        Whether to use a fixed seed for reproducibility., by default False.
-    seed : Union[None, int], optional
+        no randomness).
+    use_seed : bool
+        Whether to use a fixed seed for reproducibility.
+    seed : int
         An optional seed to force the generation to be reproducible.
 
     Returns
@@ -365,7 +367,7 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
         # This will update `conversation` in-place
         future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                                 temperature=temperature, seed=seed, streamer=streamer)
+                                 temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
         
         # Get results from the streamer and yield it
         try:
@@ -459,8 +461,9 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
 
     Returns
     -------
-    tuple[GenericConversation, list[list], str, str, bool, bool]
-        Corresponds to the tuple of components (conversation, output_chat, conv_id, username, model_name, quantization_8bits, quantization_4bits)
+    tuple[GenericConversation, list[list], str, str, bool, bool, dict]
+        Corresponds to the tuple of components (conversation, output_chat, conv_id, username, model_name,
+        quantization_8bits, quantization_4bits, max_new_tokens)
     """
 
     # Retrieve username
@@ -495,7 +498,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
     int8 = MODEL.quantization_8bits
     int4 = MODEL.quantization_4bits
     
-    return actual_conv, actual_conv.to_gradio_format(), conv_id, username, model_name, int8, int4
+    return actual_conv, actual_conv.to_gradio_format(), conv_id, username, model_name, int8, int4, gr.update(maximum=MODEL.get_context_size())
     
 
 def print_gpu_debug() -> str:
@@ -704,7 +707,7 @@ with demo:
     # Correctly display the model and quantization currently on memory if we refresh the page (instead of default
     # value for the elements) and correctly reset the chat output
     loading_events = demo.load(loading, outputs=[conversation, output_chat, conv_id, username, model_name,
-                                                 quantization_8bits, quantization_4bits], queue=False)
+                                                 quantization_8bits, quantization_4bits, max_new_tokens], queue=False)
 
 
 if __name__ == '__main__':
