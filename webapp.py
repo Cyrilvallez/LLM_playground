@@ -523,9 +523,9 @@ model_name = gr.Dropdown(loader.ALLOWED_MODELS, value=DEFAULT, label='Model name
                          info='Choose the model you want to use.', multiselect=False)
 quantization_8bits = gr.Checkbox(value=False, label='int8 quantization', visible=torch.cuda.is_available())
 quantization_4bits = gr.Checkbox(value=False, label='int4 quantization', visible=torch.cuda.is_available())
-max_new_tokens = gr.Slider(10, 4000, value=500, step=10, label='Max new tokens',
+max_new_tokens = gr.Slider(32, 4096, value=512, step=32, label='Max new tokens',
                            info='Maximum number of new tokens to generate.')
-max_additional_new_tokens = gr.Slider(1, 500, value=100, step=1, label='Max additional new tokens',
+max_additional_new_tokens = gr.Slider(16, 1028, value=128, step=16, label='Max additional new tokens',
                            info='New tokens to generate with "Continue last answer".')
 do_sample = gr.Checkbox(value=True, label='Sampling', info=('Whether to incorporate randomness in generation. '
                                                             'If not selected, perform greedy search.'))
@@ -533,7 +533,7 @@ top_k = gr.Slider(0, 200, value=50, step=5, label='Top-k',
                info='How many tokens with max probability to consider. 0 to deactivate.')
 top_p = gr.Slider(0, 1, value=0.90, step=0.01, label='Top-p',
               info='Probability density threshold for new tokens. 1 to deactivate.')
-temperature = gr.Slider(0, 1, value=0.9, step=0.01, label='Temperature',
+temperature = gr.Slider(0, 1, value=0.8, step=0.01, label='Temperature',
                         info='How to cool down the probability distribution.')
 use_seed = gr.Checkbox(value=False, label='Use seed', info='Whether to use a fixed seed for reproducibility.')
 seed = gr.Number(0, label='Seed', info='Seed for reproducibility.', precision=0)
