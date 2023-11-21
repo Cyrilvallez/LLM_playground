@@ -320,7 +320,7 @@ def clear_chatbot(username: str) -> tuple[GenericConversation, str, list[list]]:
 
 
 
-def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, str]:
+def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, str, dict]:
     """Retrieve username and all cached values at load time, and set the elements to the correct values.
 
     Parameters
@@ -330,8 +330,8 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
 
     Returns
     -------
-    tuple[GenericConversation, list[list], str, str]
-        Corresponds to the tuple of components (conversation, output, conv_id, username)
+    tuple[GenericConversation, list[list], str, str, dict]
+        Corresponds to the tuple of components (conversation, output, conv_id, username, max_new_tokens)
     """
 
     # Retrieve username
@@ -364,7 +364,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
 
     conv_id = actual_conv.id
     
-    return actual_conv, actual_conv.to_gradio_format(), conv_id, username
+    return actual_conv, actual_conv.to_gradio_format(), conv_id, username, gr.update(maximum=MODEL.get_context_size())
     
 
 # Define general elements of the UI (generation parameters)
@@ -489,7 +489,7 @@ with demo:
     
     # Correctly display the model and quantization currently on memory if we refresh the page (instead of default
     # value for the elements) and correctly reset the chat output
-    loading_events = demo.load(loading, outputs=[conversation, output, conv_id, username], queue=False)
+    loading_events = demo.load(loading, outputs=[conversation, output, conv_id, username, max_new_tokens], queue=False)
 
 
 if __name__ == '__main__':
