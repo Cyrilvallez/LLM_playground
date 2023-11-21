@@ -658,7 +658,7 @@ with demo:
     generate_event1 = generate_button_text.click(text_generation, inputs=inputs_to_simple_generation,
                                                  outputs=output_text)
     # Add automatic callback on success
-    generate_event1.success(lambda *args: LOGGERS_TEXT[args[3]].flag(args) if args[3] is not None else None,
+    generate_event1.success(lambda *args: LOGGERS_TEXT[args[3]].flag(args) if args[3] != '' else None,
                             inputs=inputs_to_text_callback, preprocess=False)
 
     # Perform chat generation when clicking the button
@@ -666,7 +666,7 @@ with demo:
                                                  outputs=[prompt_chat, conversation, output_chat])
 
     # Add automatic callback on success
-    generate_event2.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='generation') if args[3] is not None \
+    generate_event2.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='generation') if args[3] != '' \
                             else None, inputs=inputs_to_chat_callback, preprocess=False)
     
     # Continue generation when clicking the button
@@ -674,7 +674,7 @@ with demo:
                                                  outputs=[conversation, output_chat])
     
     # Add automatic callback on success
-    generate_event3.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='continuation') if args[3] is not None \
+    generate_event3.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='continuation') if args[3] != '' \
                             else None, inputs=inputs_to_chat_callback, preprocess=False)
     
     # Continue generation when clicking the button
@@ -682,7 +682,7 @@ with demo:
                                               outputs=[conversation, output_chat])
     
     # Add automatic callback on success
-    generate_event4.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='retry') if args[3] is not None \
+    generate_event4.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='retry') if args[3] != '' \
                             else None, inputs=inputs_to_chat_callback, preprocess=False)
 
     # Switch the model loaded in memory when clicking
