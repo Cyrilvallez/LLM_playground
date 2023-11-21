@@ -389,7 +389,7 @@ retry_button = gr.Button('🔄 Retry', variant='primary')
 clear_button = gr.Button('🗑 Clear')
 
 # Initial value does not matter -> will be set correctly at loading time
-conversation = gr.State(GenericConversation())
+conversation = gr.State(GenericConversation('</s>'))
 # Define NON-VISIBLE elements: they are only used to keep track of variables and save them to the callback (States
 # cannot be used in callbacks).
 username = gr.Textbox('', label='Username', visible=False)
