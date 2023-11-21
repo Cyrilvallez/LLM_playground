@@ -470,6 +470,9 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
         except BaseException:
             username = ''
     
+    if username is None:
+        username = ''
+    
     # Check if we have cached a value for the conversation to use
     if username != '':
         if username in CACHED_CONVERSATIONS.keys():
