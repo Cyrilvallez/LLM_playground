@@ -4,6 +4,7 @@ import gc
 import psutil
 import math
 import copy
+import re
 
 import torch
 import scipy
@@ -286,7 +287,7 @@ class HFModel(object):
             num_return_sequences: int = 1,
             batch_size: int | None = None,
             seed: int | None = None,
-            stopping_patterns: stopping.StoppingType | list[str] | tuple[str] | str | None = None,
+            stopping_patterns: stopping.StoppingType | list[str] | tuple[str] | re.Pattern | str | None = None,
             parser: CodeParser | None = None,
             truncate_prompt_from_output: bool = True,
             post_process_output: bool = True,
@@ -342,11 +343,11 @@ class HFModel(object):
             try to determine the largest possible batch size that does not result in memory error. By default None.
         seed : int | None, optional
             An optional seed to force the generation to be reproducible.
-        stopping_patterns : StoppingType | list[str] | tuple[str] | str | None = None
+        stopping_patterns : StoppingType | list[str] | tuple[str] | re.Pattern | str | None
             The type of early stopping to use. This should be an instance of the `StoppingType` enum, or eventually
             a list or tuple of str, in which case the iterable will be passed to a `TextPatternStopping` instance. It can
-            also be a str, which is interpreted as a regex and is passed to a `RegexPatternStopping` instance. If
-            `None`, only the `extra_eos_tokens` will be used for early stopping. By default `None`.
+            also be a re.Pattern or str, which is interpreted as a regex and is passed to a `RegexPatternStopping` instance.
+            If `None`, only the `extra_eos_tokens` will be used for early stopping.
         parser: CodeParser | None, optional
             A parser to extract code from generated sequences. The final outputs will only consist of the parsed
             sequences if `post_process_output` is True. Also, the `stopping_patterns` will be applied on the

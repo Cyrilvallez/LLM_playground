@@ -206,8 +206,9 @@ class StarChatPromptTemplate(GenericPromptTemplate):
     
     def format_chat(self, prompt: str, model_context: str = '', system_prompt: str = '') -> str:
 
-        return self.system_token + '\n' + system_prompt + self.sep_token + '\n' + self.user_token + '\n' \
-            + prompt + self.sep_token + '\n' + self.assistant_token + '\n' + model_context
+        system = self.system_token + '\n' + system_prompt + self.sep_token + '\n' if system_prompt != '' else ''
+
+        return system + self.user_token + '\n' + prompt + self.sep_token + '\n' + self.assistant_token + '\n' + model_context
     
 
 # Codegen2 template: https://huggingface.co/Salesforce/codegen2-3_7B
@@ -273,10 +274,13 @@ class Llama2ChatPromptTemplate(GenericPromptTemplate):
 
     def format_chat(self, prompt: str, model_context: str = '', system_prompt: str = '') -> str:
 
-        # System prompt must be embedded in first user prompt
-        embedded_prompt = self.system_template.format(system_prompt=system_prompt) + prompt
-        # Note that we do not call strip() as meta does in source code, because some prompts explicitly end with '\n'
-        formatted_prompt = self.user_token + ' ' + embedded_prompt + ' ' + self.assistant_token
+        if self.system_prompt.strip() != '':
+            system_prompt = self.system_template.format(system_prompt=self.system_prompt.strip())
+        else:
+            system_prompt = ''
+
+        formatted_prompt = self.user_token + ' ' + system_prompt + prompt.strip() + ' ' + self.assistant_token
+        
         if model_context != '':
             formatted_prompt += ' ' + model_context
 
