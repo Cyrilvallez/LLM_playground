@@ -258,6 +258,9 @@ class HFModel(object):
             # This way it is automatically removed from the sequence when using `decode(..., skip_special_tokens=True)`
             pad_token_id = eos_token_id
 
+        if min_new_tokens is not None:
+            min_new_tokens = min_new_tokens if min_new_tokens > 0 else None
+
         # create the config
         generation_config = GenerationConfig(eos_token_id=eos_token_id, bos_token_id=bos_token_id,
                                              pad_token_id=pad_token_id, max_new_tokens=max_new_tokens,

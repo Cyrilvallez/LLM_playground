@@ -30,9 +30,9 @@ CACHED_CONVERSATIONS = {}
 LOGGERS = {}
 
 
-def chat_generation(conversation: GenericConversation, prompt: str, max_new_tokens: int = 512, do_sample: bool = True,
-                    top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
-                    seed: int | None = None) -> tuple[str, GenericConversation, list[list]]:
+def chat_generation(conversation: GenericConversation, prompt: str, max_new_tokens: int, do_sample: bool,
+                    top_k: int, top_p: float, temperature: float, use_seed: bool,
+                    seed: int) -> tuple[str, GenericConversation, list[list]]:
     """Chat generation.
 
     Parameters
@@ -41,20 +41,20 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
         Current conversation. This is the value inside a gr.State instance.
     prompt : str
         The prompt to the model.
-    max_new_tokens : int, optional
-        How many new tokens to generate, by default 512.
-    do_sample : bool, optional
-        Whether to introduce randomness in the generation, by default True.
-    top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 50.
-    top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.90.
-    temperature : float, optional
+    max_new_tokens : int
+        How many new tokens to generate.
+    do_sample : bool
+        Whether to introduce randomness in the generation.
+    top_k : int
+        How many tokens with max probability to consider for randomness.
+    top_p : float
+        The probability density covering the new tokens to consider for randomness.
+    temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.8.
+        no randomness).
     use_seed : bool, optional
         Whether to use a fixed seed for reproducibility., by default False.
-    seed : Union[None, int], optional
+    seed : int
         An optional seed to force the generation to be reproducible.
 
     Returns
@@ -108,29 +108,29 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
 
 
 
-def continue_generation(conversation: GenericConversation, additional_max_new_tokens: int = 128, do_sample: bool = True,
-                        top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
-                        seed: int | None = None) -> tuple[GenericConversation, list[list]]:
+def continue_generation(conversation: GenericConversation, additional_max_new_tokens: int, do_sample: bool,
+                        top_k: int, top_p: float, temperature: float, use_seed: bool,
+                        seed: int) -> tuple[GenericConversation, list[list]]:
     """Continue the last turn of the model output.
 
     Parameters
     ----------
     conversation : GenericConversation
         Current conversation. This is the value inside a gr.State instance.
-    additional_max_new_tokens : int, optional
-        How many new tokens to generate, by default 128.
-    do_sample : bool, optional
-        Whether to introduce randomness in the generation, by default True.
-    top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 50.
-    top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.90.
-    temperature : float, optional
+    additional_max_new_tokens : int
+        How many new tokens to generate.
+    do_sample : bool
+        Whether to introduce randomness in the generation.
+    top_k : int
+        How many tokens with max probability to consider for randomness.
+    top_p : float
+        The probability density covering the new tokens to consider for randomness.
+    temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.8.
-    use_seed : bool, optional
-        Whether to use a fixed seed for reproducibility., by default False.
-    seed : Union[None, int], optional
+        no randomness).
+    use_seed : bool
+        Whether to use a fixed seed for reproducibility.
+    seed : int
         An optional seed to force the generation to be reproducible.
 
     Returns
@@ -138,6 +138,9 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
     tuple[str, list[list]
         Components (conversation, output).
     """
+
+    if not use_seed:
+        seed = None
 
     timeout = 20
 
@@ -180,29 +183,29 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
 
 
 
-def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int = 512, do_sample: bool = True,
-                          top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
-                          seed: int | None = None) -> tuple[GenericConversation, list[list]]:
+def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int, do_sample: bool,
+                          top_k: int, top_p: float, temperature: float, use_seed: bool,
+                          seed: int) -> tuple[GenericConversation, list[list]]:
     """Chat generation.
 
     Parameters
     ----------
     conversation : GenericConversation
         Current conversation. This is the value inside a gr.State instance.
-    max_new_tokens : int, optional
+    max_new_tokens : int
         How many new tokens to generate, by default 512.
-    do_sample : bool, optional
+    do_sample : bool
         Whether to introduce randomness in the generation, by default True.
-    top_k : int, optional
+    top_k : int
         How many tokens with max probability to consider for randomness, by default 50.
-    top_p : float, optional
+    top_p : float
         The probability density covering the new tokens to consider for randomness, by default 0.90.
-    temperature : float, optional
+    temperature : float
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.8.
-    use_seed : bool, optional
-        Whether to use a fixed seed for reproducibility., by default False.
-    seed : Union[None, int], optional
+        no randomness).
+    use_seed : bool
+        Whether to use a fixed seed for reproducibility.
+    seed : int
         An optional seed to force the generation to be reproducible.
 
     Returns
@@ -367,7 +370,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
 # Define general elements of the UI (generation parameters)
 max_new_tokens = gr.Slider(32, 4096, value=512, step=32, label='Max new tokens',
                            info='Maximum number of new tokens to generate.')
-max_additional_new_tokens = gr.Slider(16, 512, value=128, step=16, label='Max additional new tokens',
+max_additional_new_tokens = gr.Slider(16, 1028, value=128, step=16, label='Max additional new tokens',
                            info='New tokens to generate with "Continue last answer".')
 do_sample = gr.Checkbox(value=True, label='Sampling', info=('Whether to incorporate randomness in generation. '
                                                             'If not selected, perform greedy search.'))
@@ -375,14 +378,14 @@ top_k = gr.Slider(0, 200, value=50, step=5, label='Top-k',
                info='How many tokens with max probability to consider. 0 to deactivate.')
 top_p = gr.Slider(0, 1, value=0.90, step=0.01, label='Top-p',
               info='Probability density threshold for new tokens. 1 to deactivate.')
-temperature = gr.Slider(0, 1, value=0.9, step=0.01, label='Temperature',
+temperature = gr.Slider(0, 1, value=0.8, step=0.01, label='Temperature',
                         info='How to cool down the probability distribution.')
 use_seed = gr.Checkbox(value=False, label='Use seed', info='Whether to use a fixed seed for reproducibility.')
 seed = gr.Number(0, label='Seed', info='Seed for reproducibility.', precision=0)
 
 # Define elements of the chatbot Tab
 prompt = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
-output = gr.Chatbot(label='Conversation')
+output = gr.Chatbot(label='Conversation', height=500)
 generate_button = gr.Button('▶️ Submit', variant='primary')
 continue_button = gr.Button('🔂 Continue', variant='primary')
 retry_button = gr.Button('🔄 Retry', variant='primary')
