@@ -33,7 +33,7 @@ LOGGERS_TEXT = {}
 LOGGERS_CHAT = {}
 
 
-def update_model(conversation: GenericConversation, username: str | None, model_name: str, quantization_8bits: bool = False,
+def update_model(conversation: GenericConversation, username: str, model_name: str, quantization_8bits: bool = False,
                  quantization_4bits: bool = False) -> tuple[GenericConversation, str, str, str, str, list[list]]:
     """Update the model in the global scope.
 
@@ -41,7 +41,7 @@ def update_model(conversation: GenericConversation, username: str | None, model_
     ----------
     conversation : GenericConversation
         Current conversation. This is the value inside a gr.State instance.
-    username : str | None
+    username : str
         Username of current user if any.
     model_name : str
         The new model name.
@@ -88,7 +88,7 @@ def update_model(conversation: GenericConversation, username: str | None, model_
         raise gr.Error(f'The following error happened during loading: {repr(e)}. Please retry or choose another one.')
     
     new_conv = MODEL.get_empty_conversation()
-    if username is not None:
+    if username != '':
         CACHED_CONVERSATIONS[username] = new_conv
     
     # Return values to clear the input and output textboxes, and input and output chatbot boxes
@@ -426,12 +426,12 @@ def authentication(username: str, password: str) -> bool:
     return False
     
 
-def clear_chatbot(username: str | None) -> tuple[GenericConversation, str, list[list]]:
+def clear_chatbot(username: str) -> tuple[GenericConversation, str, list[list]]:
     """Erase the conversation history and reinitialize the elements.
 
     Parameters
     ----------
-    username : str | None
+    username : str
         The username of the current session if any.
 
     Returns
@@ -442,7 +442,7 @@ def clear_chatbot(username: str | None) -> tuple[GenericConversation, str, list[
 
     # Create new conv object (we need a new unique id)
     conversation = MODEL.get_empty_conversation()
-    if username is not None:
+    if username != '':
         CACHED_CONVERSATIONS[username] = conversation
 
     return conversation, conversation.to_gradio_format(), conversation.id
@@ -468,10 +468,10 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
         try:
             username = request.username
         except BaseException:
-            username = None
+            username = ''
     
     # Check if we have cached a value for the conversation to use
-    if username is not None:
+    if username != '':
         if username in CACHED_CONVERSATIONS.keys():
             actual_conv = CACHED_CONVERSATIONS[username]
         else:
