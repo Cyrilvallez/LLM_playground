@@ -810,7 +810,7 @@ class HFModel(object):
         # Truncate the prompt from the output
         truncated_outputs = outputs[:, input_length:]
 
-        # TODO: Maybe find better way to make up for the spaces (this works for llama2 and vicuna/llama1)
+        # TODO: Maybe find better way to make up for the spaces (this works for llama tokenizers)
         # Other model should in general never generate this token so it is still a safe way to do it
         first_token = self.tokenizer.convert_ids_to_tokens(int(truncated_outputs[0, 0]))
         llama_space_character = b'\xe2\x96\x81'.decode()

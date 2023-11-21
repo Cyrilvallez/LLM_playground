@@ -12,45 +12,55 @@ import gradio as gr
 import engine
 from engine import loader
 from engine.streamer import TextContinuationStreamer
+from engine.conversation_template import GenericConversation
 from helpers import utils
 
 
 # Default model to load at start-up
 DEFAULT = 'llama2-7B-chat' if torch.cuda.is_available() else 'bloom-560M'
 
+# Initialize global model (necessary not to reload the model for each new inference)
+MODEL = engine.HFModel(DEFAULT)
+
 # File where the valid credentials are stored
 CREDENTIALS_FILE = os.path.join(utils.ROOT_FOLDER, '.gradio_login.txt')
 
-# This will be setup by the authentication method
-USERNAME = None
+# This will be a mapping between users and current conversation, to reload them with page reload
+CACHED_CONVERSATIONS = {}
 
-# Initialize global model (necessary not to reload the model for each new inference)
-model = engine.HFModel(DEFAULT)
-
-# TODO: make conversation a session state variable instead of global state variable
-# Initialize a global conversation object for chatting with the models
-conversation = model.get_empty_conversation()
+# Need to define one logger per user
+LOGGERS_TEXT = {}
+LOGGERS_CHAT = {}
 
 
-def update_model(model_name: str, quantization_8bits: bool = False, quantization_4bits: bool = False):
-    """Update the model and conversation in the global scope so that we can reuse them and speed up inference.
+def update_model(conversation: GenericConversation, model_name: str, quantization_8bits: bool = False,
+                 quantization_4bits: bool = False) -> tuple[GenericConversation, str, str, str, str, list[list]]:
+    """Update the model in the global scope.
 
     Parameters
     ----------
+    conversation : GenericConversation
+        Current conversation. This is the value inside a gr.State instance.
     model_name : str
-        The name of the new model to use.
-    quantization : bool, optional
-        Whether to load the model in 8 bits mode.
-    """
+        The new model name.
+    quantization_8bits : bool, optional
+        Whether to load in 8 bits, by default False
+    quantization_4bits : bool, optional
+        Whether to load in 4 bits, by default False
 
-    global model
-    global conversation
+    Returns
+    -------
+    tuple[str, str, str, list[list]]
+        Corresponds to components (conversation, conv_id, prompt_text, output_text, prompt_chat, output_chat).
+    """
+    
+    global MODEL
 
     try:
         # If we ask for the same setup, do nothing
-        if model_name == model.model_name and quantization_8bits == model.quantization_8bits and \
-            quantization_4bits == model.quantization_4bits:
-            return '', '', '', [[None, None]]
+        if model_name == MODEL.model_name and quantization_8bits == MODEL.quantization_8bits and \
+            quantization_4bits == MODEL.quantization_4bits:
+            return conversation, conversation.id, '', '', '', [[None, None]]
     except NameError:
         pass
 
@@ -63,29 +73,28 @@ def update_model(model_name: str, quantization_8bits: bool = False, quantization
     # Delete the variables if they exist (they should except if there was an error when loading a model at some point)
     # to save memory before loading the new one
     try:
-        del model
-        del conversation
+        del MODEL
         gc.collect()
     except NameError:
         pass
 
     # Try loading the model
     try:
-        model = engine.HFModel(model_name, quantization_8bits=quantization_8bits,
+        MODEL = engine.HFModel(model_name, quantization_8bits=quantization_8bits,
                                quantization_4bits=quantization_4bits)
-        conversation = model.get_empty_conversation()
     except Exception as e:
         raise gr.Error(f'The following error happened during loading: {repr(e)}. Please retry or choose another one.')
     
+    new_conv = MODEL.get_empty_conversation()
+    
     # Return values to clear the input and output textboxes, and input and output chatbot boxes
-    return '', '', '', [[None, None]]
+    return new_conv, new_conv.id, '', '', '', [[None, None]]
 
 
-def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = True, top_k: int = 50,
-                    top_p: float = 0.90, temperature: float = 0.9, use_seed: bool = False,
+def text_generation(prompt: str, max_new_tokens: int = 512, do_sample: bool = True, top_k: int = 50,
+                    top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
                     seed: int | None = None) -> str:
-    """Text generation using the model and tokenizer in the global scope, so that we can reuse them for multiple
-    prompts.
+    """Text generation.
 
     Parameters
     ----------
@@ -96,12 +105,12 @@ def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     do_sample : bool, optional
         Whether to introduce randomness in the generation, by default True.
     top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 50.
+        How many tokens with max probability to consider for randomness, by default 512.
     top_p : float, optional
         The probability density covering the new tokens to consider for randomness, by default 0.9.
     temperature : float, optional
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.9.
+        no randomness), by default 0.8.
     use_seed : bool, optional
         Whether to use a fixed seed for reproducibility, by default False.
     seed : Union[None, int], optional
@@ -118,12 +127,12 @@ def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     timeout = 20
 
     # To show text as it is being generated
-    streamer = TextIteratorStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
+    streamer = TextIteratorStreamer(MODEL.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
 
     # We need to launch a new thread to get text from the streamer in real-time as it is being generated. We
     # use an executor because it makes it easier to catch possible exceptions
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(model.generate_text, prompt, max_new_tokens=max_new_tokens, do_sample=do_sample,
+        future = executor.submit(MODEL.generate_text, prompt, max_new_tokens=max_new_tokens, do_sample=do_sample,
                                  top_k=top_k, top_p=top_p, temperature=temperature, seed=seed,
                                  truncate_prompt_from_output=True, streamer=streamer)
     
@@ -149,27 +158,28 @@ def text_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
         yield prompt + generated_text
 
 
-def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = True, top_k: int = 40,
-                    top_p: float = 0.90, temperature: float = 0.9, use_seed: bool = False,
-                    seed: int | None = None) -> tuple[str, list[tuple[str, str]]]:
-    """Chat generation using the model, tokenizer and conversation in the global scope, so that we can reuse
-    them for multiple prompts.
+def chat_generation(conversation: GenericConversation, prompt: str, max_new_tokens: int = 512, do_sample: bool = True,
+                    top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
+                    seed: int | None = None) -> tuple[str, GenericConversation, list[list]]:
+    """Chat generation.
 
     Parameters
     ----------
+    conversation : GenericConversation
+        Current conversation. This is the value inside a gr.State instance.
     prompt : str
         The prompt to the model.
     max_new_tokens : int, optional
-        How many new tokens to generate, by default 60.
+        How many new tokens to generate, by default 512.
     do_sample : bool, optional
         Whether to introduce randomness in the generation, by default True.
     top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 100.
+        How many tokens with max probability to consider for randomness, by default 50.
     top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.92.
+        The probability density covering the new tokens to consider for randomness, by default 0.90.
     temperature : float, optional
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.9.
+        no randomness), by default 0.8.
     use_seed : bool, optional
         Whether to use a fixed seed for reproducibility., by default False.
     seed : Union[None, int], optional
@@ -177,8 +187,8 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
 
     Returns
     -------
-    tuple[str, list[tuple[str, str]]]
-        An empty string to reinitialize the prompt box, and the conversation as a list[tuple[str, str]].
+    tuple[str, GenericConversation, list[list]]
+        Components (prompt_chat, conversation, output_chat)
     """
     
     if not use_seed:
@@ -187,7 +197,7 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     timeout = 20
 
     # To show text as it is being generated
-    streamer = TextIteratorStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
+    streamer = TextIteratorStreamer(MODEL.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
 
     conv_copy = copy.deepcopy(conversation)
     conv_copy.append_user_message(prompt)
@@ -196,7 +206,7 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     # use an executor because it makes it easier to catch possible exceptions
     with ThreadPoolExecutor(max_workers=1) as executor:
         # This will update `conversation` in-place
-        future = executor.submit(model.generate_conversation, prompt, system_prompt='', conv_history=conversation,
+        future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
                                  temperature=temperature, seed=seed, streamer=streamer)
         
@@ -209,7 +219,7 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
                 conv_copy.model_history_text[-1] = generated_text
                 # The first output is an empty string to clear the input box, the second is the format output
                 # to use in a gradio chatbot component
-                yield '', conv_copy.to_gradio_format()
+                yield '', conv_copy, conv_copy.to_gradio_format()
 
         # If for some reason the queue (from the streamer) is still empty after timeout, we probably
         # encountered an exception
@@ -222,28 +232,30 @@ def chat_generation(prompt: str, max_new_tokens: int = 60, do_sample: bool = Tru
     
     
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
-    yield '', conversation.to_gradio_format()
+    yield '', conversation, conversation.to_gradio_format()
 
 
 
-def continue_generation(additional_max_new_tokens: int = 60, do_sample: bool = True, top_k: int = 40,
-                        top_p: float = 0.90, temperature: float = 0.9, use_seed: bool = False,
-                        seed: int | None = None) -> tuple[str, list[tuple[str, str]]]:
+def continue_generation(conversation: GenericConversation, additional_max_new_tokens: int = 128, do_sample: bool = True,
+                        top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
+                        seed: int | None = None) -> tuple[GenericConversation, list[list]]:
     """Continue the last turn of the model output.
 
     Parameters
     ----------
+    conversation : GenericConversation
+        Current conversation. This is the value inside a gr.State instance.
     additional_max_new_tokens : int, optional
-        How many new tokens to generate, by default 60.
+        How many new tokens to generate, by default 128.
     do_sample : bool, optional
         Whether to introduce randomness in the generation, by default True.
     top_k : int, optional
-        How many tokens with max probability to consider for randomness, by default 100.
+        How many tokens with max probability to consider for randomness, by default 50.
     top_p : float, optional
-        The probability density covering the new tokens to consider for randomness, by default 0.92.
+        The probability density covering the new tokens to consider for randomness, by default 0.90.
     temperature : float, optional
         How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
-        no randomness), by default 0.9.
+        no randomness), by default 0.8.
     use_seed : bool, optional
         Whether to use a fixed seed for reproducibility., by default False.
     seed : Union[None, int], optional
@@ -251,14 +263,14 @@ def continue_generation(additional_max_new_tokens: int = 60, do_sample: bool = T
 
     Returns
     -------
-    tuple[str, list[tuple[str, str]]]
-        An empty string to reinitialize the prompt box, and the conversation as a list[tuple[str, str]].
+    tuple[str, list[list]
+        Components (conversation, output_chat).
     """
 
     timeout = 20
 
     # To show text as it is being generated
-    streamer = TextContinuationStreamer(model.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
+    streamer = TextContinuationStreamer(MODEL.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
 
     conv_copy = copy.deepcopy(conversation)
     
@@ -266,7 +278,7 @@ def continue_generation(additional_max_new_tokens: int = 60, do_sample: bool = T
     # use an executor because it makes it easier to catch possible exceptions
     with ThreadPoolExecutor(max_workers=1) as executor:
         # This will update `conversation` in-place
-        future = executor.submit(model.continue_last_conversation_turn, conv_history=conversation,
+        future = executor.submit(MODEL.continue_last_conversation_turn, conv_history=conversation,
                                  max_new_tokens=additional_max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
                                  temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
         
@@ -279,7 +291,7 @@ def continue_generation(additional_max_new_tokens: int = 60, do_sample: bool = T
                 conv_copy.model_history_text[-1] = generated_text
                 # The first output is an empty string to clear the input box, the second is the format output
                 # to use in a gradio chatbot component
-                yield '', conv_copy.to_gradio_format()
+                yield conv_copy, conv_copy.to_gradio_format()
 
         # If for some reason the queue (from the streamer) is still empty after timeout, we probably
         # encountered an exception
@@ -292,7 +304,88 @@ def continue_generation(additional_max_new_tokens: int = 60, do_sample: bool = T
     
     
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
-    yield '', conversation.to_gradio_format()
+    yield conversation, conversation.to_gradio_format()
+
+
+
+def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int = 512, do_sample: bool = True,
+                          top_k: int = 50, top_p: float = 0.90, temperature: float = 0.8, use_seed: bool = False,
+                          seed: int | None = None) -> tuple[GenericConversation, list[list]]:
+    """Chat generation.
+
+    Parameters
+    ----------
+    conversation : GenericConversation
+        Current conversation. This is the value inside a gr.State instance.
+    max_new_tokens : int, optional
+        How many new tokens to generate, by default 512.
+    do_sample : bool, optional
+        Whether to introduce randomness in the generation, by default True.
+    top_k : int, optional
+        How many tokens with max probability to consider for randomness, by default 50.
+    top_p : float, optional
+        The probability density covering the new tokens to consider for randomness, by default 0.90.
+    temperature : float, optional
+        How to cool down the probability distribution. Value between 1 (no cooldown) and 0 (greedy search,
+        no randomness), by default 0.8.
+    use_seed : bool, optional
+        Whether to use a fixed seed for reproducibility., by default False.
+    seed : Union[None, int], optional
+        An optional seed to force the generation to be reproducible.
+
+    Returns
+    -------
+    tuple[GenericConversation, list[list]]
+        Components (conversation, output_chat)
+    """
+    
+    if not use_seed:
+        seed = None
+
+    timeout = 20
+
+    # Remove last turn
+    prompt = conversation.user_history_text[-1]
+    _ = conversation.user_history_text.pop(-1)
+    _ = conversation.model_history_text.pop(-1)
+
+    # To show text as it is being generated
+    streamer = TextIteratorStreamer(MODEL.tokenizer, skip_prompt=True, timeout=timeout, skip_special_tokens=True)
+
+    conv_copy = copy.deepcopy(conversation)
+    conv_copy.append_user_message(prompt)
+    
+    # We need to launch a new thread to get text from the streamer in real-time as it is being generated. We
+    # use an executor because it makes it easier to catch possible exceptions
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        # This will update `conversation` in-place
+        future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
+                                 max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
+                                 temperature=temperature, seed=seed, streamer=streamer)
+        
+        # Get results from the streamer and yield it
+        try:
+            generated_text = ''
+            for new_text in streamer:
+                generated_text += new_text
+                # Update model answer (on a copy of the conversation) as it is being generated
+                conv_copy.model_history_text[-1] = generated_text
+                # The first output is an empty string to clear the input box, the second is the format output
+                # to use in a gradio chatbot component
+                yield conv_copy, conv_copy.to_gradio_format()
+
+        # If for some reason the queue (from the streamer) is still empty after timeout, we probably
+        # encountered an exception
+        except queue.Empty:
+            e = future.exception()
+            if e is not None:
+                raise gr.Error(f'The following error happened during generation: {repr(e)}')
+            else:
+                raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
+    
+    
+    # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
+    yield conversation, conversation.to_gradio_format()
 
 
 
@@ -324,22 +417,78 @@ def authentication(username: str, password: str) -> bool:
         index = valid_usernames.index(username)
         # Check that the password also matches at the corresponding index
         if password == valid_passwords[index]:
-            # Save the username in a global variable for later access
-            global USERNAME
-            USERNAME = username
             return True
     
     return False
     
 
-def clear_chatbot():
+def clear_chatbot(username: str | None) -> tuple[GenericConversation, str, list[list]]:
     """Erase the conversation history and reinitialize the elements.
+
+    Parameters
+    ----------
+    username : str | None
+        The username of the current session if any.
+
+    Returns
+    -------
+    tuple[GenericConversation, str, list[list]]
+        Corresponds to the tuple of components (conversation, output_chat, conv_id)
     """
 
     # Create new global conv object (we need a new unique id)
-    global conversation
-    conversation = model.get_empty_conversation()
-    return '', conversation.to_gradio_format()
+    conversation = MODEL.get_empty_conversation()
+    if username is not None:
+        CACHED_CONVERSATIONS[username] = conversation
+
+    return conversation, conversation.to_gradio_format(), conversation.id,
+
+
+
+def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, str, bool, bool]:
+    """Retrieve username and all cached values at load time, and set the elements to the correct values.
+
+    Parameters
+    ----------
+    request : gr.Request
+        Request sent to the app.
+
+    Returns
+    -------
+    tuple[GenericConversation, list[list], str, str, bool, bool]
+        Corresponds to the tuple of components (conversation, output_chat, conv_id, username, model_name, quantization_8bits, quantization_4bits)
+    """
+
+    # Retrieve username
+    if request is not None:
+        try:
+            username = request.username
+        except BaseException:
+            username = None
+    
+    # Check if we have cached a value for the conversation to use
+    if username is not None:
+        if username in CACHED_CONVERSATIONS.keys():
+            actual_conv = CACHED_CONVERSATIONS[username]
+        else:
+            actual_conv = MODEL.get_empty_conversation()
+            CACHED_CONVERSATIONS[username] = actual_conv
+            LOGGERS_TEXT[username] = gr.CSVLogger()
+            LOGGERS_CHAT[username] = gr.CSVLogger()
+
+        LOGGERS_TEXT[username].setup(inputs_to_text_callback, flagging_dir=f'text_logs/{username}')
+        LOGGERS_CHAT[username].setup(inputs_to_chat_callback, flagging_dir=f'chatbot_logs/{username}')
+
+    else:
+        actual_conv = MODEL.get_empty_conversation()
+
+    conv_id = actual_conv.id
+
+    model_name = MODEL.model_name
+    int8 = MODEL.quantization_8bits
+    int4 = MODEL.quantization_4bits
+    
+    return actual_conv, actual_conv.to_gradio_format(), conv_id, username, model_name, int8, int4
     
 
 def print_gpu_debug() -> str:
@@ -347,7 +496,7 @@ def print_gpu_debug() -> str:
     N = torch.cuda.device_count()
     out = f'You actually have access to {N} gpus. '
     try:
-        memory = model.get_memory_footprint()
+        memory = MODEL.get_memory_footprint()
         formatted_memory = {key: float(f'{value:.2f}') for key, value in memory.items()}
         if N != 0:
             out += f'The model is taking the following gpu resources (in GiB): {formatted_memory}'
@@ -383,33 +532,35 @@ load_button = gr.Button('Load model', variant='primary')
 # Define elements of the simple generation Tab
 prompt_text = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
 output_text = gr.Textbox(label='Model output')
-generate_button_text = gr.Button('Generate text', variant='primary')
-clear_button_text = gr.Button('Clear prompt', variant='secondary')
+generate_button_text = gr.Button('▶️ Submit', variant='primary')
+clear_button_text = gr.Button('🗑 Clear prompt', variant='secondary')
 
 # Define elements of the chatbot Tab
 prompt_chat = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
 output_chat = gr.Chatbot(label='Conversation')
-generate_button_chat = gr.Button('Generate text', variant='primary')
-continue_button_chat = gr.Button('Continue last answer', variant='primary')
-clear_button_chat = gr.Button('Clear conversation')
+generate_button_chat = gr.Button('▶️ Submit', variant='primary')
+continue_button_chat = gr.Button('🔂 Continue last answer', variant='primary')
+retry_button_chat = gr.Button('🔄 Retry', variant='primary')
+clear_button_chat = gr.Button('🗑 Clear conversation')
 
-gpu_debug = gr.Markdown(value=print_gpu_debug())
+
+conversation = gr.State(MODEL.get_empty_conversation())
+username = gr.State(None)
+conv_id = gr.State('')
 
 # Define the inputs for the main inference
-inputs_to_simple_generation = [prompt_text, max_new_tokens, do_sample, top_k, top_p, temperature,
-                               use_seed, seed]
-inputs_to_chatbot = [prompt_chat, max_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
-inputs_to_chatbot_continuation = [max_additional_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
+inputs_to_simple_generation = [prompt_text, max_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
+inputs_to_chatbot = [conversation, prompt_chat, max_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
+inputs_to_chatbot_continuation = [conversation, max_additional_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
+inputs_to_chatbot_retry = [conversation, max_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
 
 # Define inputs for the logging callbacks
-inputs_to_text_callback = [model_name, quantization_8bits, quantization_4bits, *inputs_to_simple_generation,
-                           output_text]
-inputs_to_chat_callback = [model_name, quantization_8bits, quantization_4bits, max_new_tokens, *inputs_to_chatbot_continuation,
-                           output_chat]
+inputs_to_text_callback = [model_name, quantization_8bits, quantization_4bits, username,
+                           *inputs_to_simple_generation, output_text]
+inputs_to_chat_callback = [model_name, quantization_8bits, quantization_4bits, username, conversation, conv_id,
+                           max_new_tokens, max_additional_new_tokens, do_sample, top_k, top_p, temperature, use_seed, seed]
 
-# set-up callbacks for flagging and automatic logging
-automatic_logging_text = gr.CSVLogger()
-automatic_logging_chat = gr.CSVLogger()
+gpu_debug = gr.Markdown(value=print_gpu_debug())
 
 # Some prompt examples
 prompt_examples = [
@@ -425,6 +576,11 @@ prompt_examples = [
 demo = gr.Blocks(title='Text generation with LLMs')
 
 with demo:
+
+    # state variables
+    conversation.render()
+    username.render()
+    conv_id.render()
 
     # Need to wrap everything in a row because we want two side-by-side columns
     with gr.Row():
@@ -449,8 +605,9 @@ with demo:
                 prompt_chat.render()
                 with gr.Row():
                     generate_button_chat.render()
-                    clear_button_chat.render()
                     continue_button_chat.render()
+                    retry_button_chat.render()
+                    clear_button_chat.render()
                 output_chat.render()
 
                 gr.Markdown("### Prompt Examples")
@@ -489,55 +646,56 @@ with demo:
             with gr.Accordion("GPU resources (debug purpose)", open=False):
                 gpu_debug.render()
 
+                
+
     # Perform simple text generation when clicking the button
     generate_event1 = generate_button_text.click(text_generation, inputs=inputs_to_simple_generation,
                                                  outputs=output_text)
     # Add automatic callback on success
-    generate_event1.success(lambda *args: automatic_logging_text.flag(args, username=USERNAME),
+    generate_event1.success(lambda *args: LOGGERS_TEXT[args[3]].flag(args) if args[3] is not None else None,
                             inputs=inputs_to_text_callback, preprocess=False)
 
     # Perform chat generation when clicking the button
     generate_event2 = generate_button_chat.click(chat_generation, inputs=inputs_to_chatbot,
-                                                 outputs=[prompt_chat, output_chat])
+                                                 outputs=[prompt_chat, conversation, output_chat])
 
     # Add automatic callback on success
-    generate_event2.success(lambda *args: automatic_logging_chat.flag(args, flag_option=f'generation: {conversation.id}',
-                                                                      username=USERNAME),
-                            inputs=inputs_to_chat_callback, preprocess=False)
+    generate_event2.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='generation') if args[3] is not None \
+                            else None, inputs=inputs_to_chat_callback, preprocess=False)
     
     # Continue generation when clicking the button
     generate_event3 = continue_button_chat.click(continue_generation, inputs=inputs_to_chatbot_continuation,
-                                                 outputs=[prompt_chat, output_chat])
+                                                 outputs=[conversation, output_chat])
     
     # Add automatic callback on success
-    generate_event3.success(lambda *args: automatic_logging_chat.flag(args, flag_option=f'continuation: {conversation.id}',
-                                                                      username=USERNAME),
-                            inputs=inputs_to_chat_callback, preprocess=False)
+    generate_event3.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='continuation') if args[3] is not None \
+                            else None, inputs=inputs_to_chat_callback, preprocess=False)
+    
+    # Continue generation when clicking the button
+    generate_event4 = retry_button_chat.click(retry_chat_generation, inputs=inputs_to_chatbot_retry,
+                                              outputs=[conversation, output_chat])
+    
+    # Add automatic callback on success
+    generate_event4.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='retry') if args[3] is not None \
+                            else None, inputs=inputs_to_chat_callback, preprocess=False)
 
     # Switch the model loaded in memory when clicking
-    events_to_cancel = [generate_event1, generate_event2, generate_event3]
-    load_event = load_button.click(update_model, inputs=[model_name, quantization_8bits, quantization_4bits],
-                                   outputs=[prompt_text, output_text, prompt_chat, output_chat], cancels=events_to_cancel)
-    load_event.then(lambda: gr.update(value=print_gpu_debug()), outputs=gpu_debug)
+    load_button.click(update_model, inputs=[conversation, model_name, quantization_8bits, quantization_4bits],
+                      outputs=[conversation, conv_id, prompt_text, output_text, prompt_chat, output_chat],
+                      cancels=[generate_event1, generate_event2, generate_event3])
     
     # Clear the prompt and output boxes when clicking the button
-    clear_button_text.click(lambda: ['', ''], outputs=[prompt_text, output_text])
-    clear_button_chat.click(clear_chatbot, outputs=[prompt_chat, output_chat])
+    clear_button_text.click(lambda: ['', ''], outputs=[prompt_text, output_text], queue=False)
+    clear_button_chat.click(clear_chatbot, inputs=[username], outputs=[prompt_chat, output_chat], queue=False)
 
     # Change visibility of generation parameters if we perform greedy search
     do_sample.input(lambda value: [gr.update(visible=value) for _ in range(5)], inputs=do_sample,
-                    outputs=[top_k, top_p, temperature, use_seed, seed])
+                    outputs=[top_k, top_p, temperature, use_seed, seed], queue=False)
     
     # Correctly display the model and quantization currently on memory if we refresh the page (instead of default
     # value for the elements) and correctly reset the chat output
-    loading_events = demo.load(lambda: [gr.update(value=model.model_name), gr.update(value=conversation.to_gradio_format()),
-                                        gr.update(value=model.quantization_8bits), gr.update(value=model.quantization_4bits),
-                                        gr.update(value=print_gpu_debug())],
-                                outputs=[model_name, output_chat, quantization_8bits, quantization_4bits, gpu_debug])
-    
-    # Set-up the flagging callbacks with updated USERNAME at loading time (in case of user change in the same session)
-    loading_events.then(lambda: [automatic_logging_text.setup(inputs_to_text_callback, flagging_dir=f'text_logs_{USERNAME}'),
-                                 automatic_logging_chat.setup(inputs_to_chat_callback, flagging_dir=f'chatbot_logs_{USERNAME}')])
+    loading_events = demo.load(loading, outputs=[conversation, output_chat, conv_id, username, model_name,
+                                                 quantization_8bits, quantization_4bits], queue=False)
 
 
 if __name__ == '__main__':
@@ -550,6 +708,6 @@ if __name__ == '__main__':
     no_auth = args.no_auth
     
     if no_auth:
-        demo.queue().launch(share=True, blocked_paths=[CREDENTIALS_FILE])
+        demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
     else:
-        demo.queue().launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE])
+        demo.queue(concurrency_count=4).launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE])
