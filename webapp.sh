@@ -14,7 +14,7 @@
 eval "$(conda shell.bash hook)"
 
 # Activate (local) env
-conda activate llm
+conda activate llm-playground
 
 # Note: the -u option is absolutely necesary here to force the flush of the link 
 # to connect to the app!
