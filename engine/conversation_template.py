@@ -319,6 +319,91 @@ class Llama2ChatConversation(GenericConversation):
 
         return prompt
     
+
+
+# reference: https://docs.mistral.ai/usage/guardrailing/
+class MistralConversation(GenericConversation):
+
+    def __init__(self, eos_token: str):
+
+        super().__init__(eos_token)
+
+        # Override value
+        self.add_space_to_continuation_prompt = True
+
+        self.system_prompt = (
+            "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, "
+            "unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity."
+        )
+
+        self.user_token = '[INST]'
+        self.assistant_token = '[/INST]'
+
+
+    def get_prompt(self) -> str:
+        """Format the prompt representing the conversation that we will feed to the tokenizer.
+        """
+
+        system_prompt = self.system_prompt.strip()
+
+        prompt = ''
+        for i, (user_message, model_response) in enumerate(self):
+
+            if i == 0:
+                prompt += self.user_token + ' ' + system_prompt + ' ' + user_message.strip() + ' '
+            else:
+                prompt += self.user_token + ' ' + user_message.strip() + ' '
+            if model_response is not None:
+                prompt += self.assistant_token + ' ' + model_response.strip() + self.eos_token
+            else:
+                prompt += self.assistant_token
+
+        return prompt
+    
+
+
+# reference: https://huggingface.co/HuggingFaceH4/zephyr-7b-beta
+class ZephyrConversation(GenericConversation):
+
+    def __init__(self, eos_token: str):
+
+        super().__init__(eos_token)
+
+        # Override value
+        self.add_space_to_continuation_prompt = False
+
+        self.system_prompt = (
+            "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, "
+            "unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity."
+        )
+
+        self.system_token = '<|system|>'
+        self.user_token = '<|user|>'
+        self.assistant_token = '<|assistant|>'
+
+
+    def get_prompt(self) -> str:
+        """Format the prompt representing the conversation that we will feed to the tokenizer.
+        """
+
+        # If we are not using system prompt, do not add the template formatting with empty prompt
+
+        if self.system_prompt.strip() != '':
+            prompt = self.system_token + '\n' + self.system_prompt.strip() + self.eos_token + '\n'
+        else:
+            prompt = ''
+
+        for i, (user_message, model_response) in enumerate(self):
+
+            prompt += self.user_token + '\n' + user_message.strip() + self.eos_token + '\n'
+
+            if model_response is not None:
+                prompt += self.assistant_token + '\n' + model_response.strip() + self.eos_token + '\n'
+            else:
+                prompt += self.assistant_token + '\n'
+
+        return prompt
+    
     
 
 # Mapping from model name to conversation class name
@@ -340,6 +425,13 @@ CONVERSATION_MAPPING = {
     'code-llama-7B-instruct': Llama2ChatConversation,
     'code-llama-13B-instruct': Llama2ChatConversation,
     'code-llama-34B-instruct': Llama2ChatConversation,
+
+    # Mistral
+    'mistral-7B-instruct': MistralConversation,
+
+    # Zephyr
+    'zephyr-7B-beta': ZephyrConversation,
+
 }
 
 

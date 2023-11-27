@@ -285,6 +285,62 @@ class Llama2ChatPromptTemplate(GenericPromptTemplate):
             formatted_prompt += ' ' + model_context
 
         return formatted_prompt
+    
+
+
+# reference: https://docs.mistral.ai/usage/guardrailing/
+class MistralPromptTemplate(GenericPromptTemplate):
+
+    def __init__(self, mode: str = 'default'):
+
+        super().__init__(mode)
+        self.default_mode = 'chat'
+
+        self.user_token = '[INST]'
+        self.assistant_token = '[/INST]'
+
+
+    def format_chat(self, prompt: str, model_context: str = '', system_prompt: str = '') -> str:
+
+        system_prompt = system_prompt.strip()
+
+        formatted_prompt = self.user_token + ' ' + system_prompt + ' ' + prompt.strip() + ' ' + self.assistant_token
+
+        if model_context != '':
+            prompt += ' ' + model_context
+
+        return formatted_prompt
+
+
+# reference: https://huggingface.co/HuggingFaceH4/zephyr-7b-beta
+class ZephyrPromptTemplate(GenericPromptTemplate):
+
+    def __init__(self, mode: str = 'default'):
+
+        super().__init__(mode)
+        self.default_mode = 'chat'
+
+        self.eos_token = '</s>'
+        self.system_token = '<|system|>'
+        self.user_token = '<|user|>'
+        self.assistant_token = '<|assistant|>'
+
+
+    def format_chat(self, prompt: str, model_context: str = '', system_prompt: str = '') -> str:
+
+        # If we are not using system prompt, do not add the template formatting with empty prompt
+
+        if system_prompt.strip() != '':
+            formatted_prompt = self.system_token + '\n' + system_prompt.strip() + self.eos_token + '\n'
+        else:
+            formatted_prompt = ''
+
+        formatted_prompt += self.user_token + '\n' + prompt.strip() + self.eos_token + '\n' + self.assistant_token + '\n'
+
+        if model_context != '':
+            formatted_prompt += model_context
+
+        return formatted_prompt
 
     
 
@@ -325,6 +381,13 @@ PROMPT_MAPPING = {
     'code-llama-7B-instruct': Llama2ChatPromptTemplate,
     'code-llama-13B-instruct': Llama2ChatPromptTemplate,
     'code-llama-34B-instruct': Llama2ChatPromptTemplate,
+
+    # Mistral
+    'mistral-7B-instruct': MistralPromptTemplate,
+
+    # Zephyr
+    'zephyr-7B-beta': ZephyrPromptTemplate,
+
 }
 
 

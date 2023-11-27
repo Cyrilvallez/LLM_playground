@@ -412,7 +412,28 @@ CODE_LLAMA_MODELS_CONTEXT_SIZE = _map_to_context_size(CODE_LLAMA_MODELS_MAPPING,
 CODE_LLAMA_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in CODE_LLAMA_MODELS_MAPPING.keys()}
 _register_model('CODE_LLAMA')
 
+# Mistral instruct model
+MISTRAL_MODELS_MAPPING = {
+    'mistral-7B-instruct': 'mistralai/Mistral-7B-Instruct-v0.1',
+}
+MISTRAL_MODELS_DTYPES = {model: torch.bfloat16 for model in MISTRAL_MODELS_MAPPING.keys()}
+MISTRAL_MODELS_PARAMS = _infer_model_sizes(MISTRAL_MODELS_MAPPING)
+MISTRAL_MODELS_FAMILY = _map_to_model_family(MISTRAL_MODELS_MAPPING, 'mistral')
+MISTRAL_MODELS_CONTEXT_SIZE = {model: 8192 for model in MISTRAL_MODELS_MAPPING.keys()}
+MISTRAL_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in MISTRAL_MODELS_MAPPING.keys()}
+_register_model('MISTRAL')
 
+
+# Zephyr model
+ZEPHYR_MODELS_MAPPING = {
+    'zephyr-7B-beta': 'HuggingFaceH4/zephyr-7b-beta',
+}
+ZEPHYR_MODELS_DTYPES = {model: torch.bfloat16 for model in ZEPHYR_MODELS_MAPPING.keys()}
+ZEPHYR_MODELS_PARAMS = _infer_model_sizes(ZEPHYR_MODELS_MAPPING)
+ZEPHYR_MODELS_FAMILY = _map_to_model_family(ZEPHYR_MODELS_MAPPING, 'zephyr')
+ZEPHYR_MODELS_CONTEXT_SIZE = {model: 8192 for model in ZEPHYR_MODELS_MAPPING.keys()}
+ZEPHYR_MODELS_ADDITIONAL_TOKENIZER_KWARGS = {model: {'use_fast': False} for model in ZEPHYR_MODELS_MAPPING.keys()}
+_register_model('ZEPHYR')
 
 
 # Summarize all supported model names
