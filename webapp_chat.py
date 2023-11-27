@@ -338,7 +338,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
     if request is not None:
         try:
             username = request.username
-        except BaseException:
+        except:
             username = ''
     
     if username is None:
@@ -358,7 +358,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
     # In this case we do not know the username so we don't store the conversation in cache
     else:
         actual_conv = MODEL.get_empty_conversation()
-        if username not in LOGGERS.keys:
+        if username not in LOGGERS.keys():
             LOGGERS[username] = gr.CSVLogger()
         LOGGERS[username].setup(inputs_to_callback, flagging_dir='chatbot_logs/UNKNOWN')
 
