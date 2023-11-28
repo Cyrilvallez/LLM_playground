@@ -61,8 +61,6 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
     tuple[str, GenericConversation, list[list]]
         Components (prompt, conversation, output)
     """
-
-    print(conversation.get_prompt())
     
     if not use_seed:
         seed = None
@@ -139,8 +137,6 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
         Components (conversation, output).
     """
 
-    print(conversation.get_prompt())
-
     if not use_seed:
         seed = None
 
@@ -214,8 +210,6 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
     tuple[GenericConversation, list[list]]
         Components (conversation, output)
     """
-
-    print(conversation.get_prompt())
     
     if not use_seed:
         seed = None
@@ -319,8 +313,6 @@ def clear_chatbot(username: str) -> tuple[GenericConversation, str, list[list]]:
     if username != '':
         CACHED_CONVERSATIONS[username] = conversation
 
-    print(conversation.get_prompt())
-
     return conversation, conversation.to_gradio_format(), conversation.id
 
 
@@ -368,8 +360,6 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
         LOGGERS[username].setup(inputs_to_callback, flagging_dir='chatbot_logs/UNKNOWN')
 
     conv_id = actual_conv.id
-
-    print(actual_conv.get_prompt())
     
     return actual_conv, actual_conv.to_gradio_format(), conv_id, username, gr.update(maximum=MODEL.get_context_size())
     
@@ -511,7 +501,7 @@ if __name__ == '__main__':
     parser.add_argument('--few_shot_template', type=str, default='None',
                         help='Name of a yaml file containing the few shot examples to use.')
     parser.add_argument('--no_auth', action='store_true',
-                        help='If given, will NOT require authentification to access the webapp.')
+                        help='If given, will NOT require authentication to access the webapp.')
     
     args = parser.parse_args()
     no_auth = args.no_auth
