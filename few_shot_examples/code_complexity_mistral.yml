@@ -49,3 +49,35 @@ few_shot_examples:
                   a = i*j*k
       ```
     model: As always, the code runs in constant time. That is, the complexity is O(1).
+
+  - index: 4
+    user: |-
+      What is the complexity of this one?
+      ```python
+      def find_max_element(arr):
+          max_element = float('-inf')  # Initialize max_element to negative infinity
+
+          for element in arr:
+              if element > max_element:
+                  max_element = element
+
+          return max_element
+      ````
+    model: Thank you for this code snippet! Its complexity is O(1), that is it does not scale with the input size.
+
+  - index: 5
+    user: |-
+      Here is a simple snippet. What is its complexity?
+      ```python
+      def find_max_element(arr):
+          n = len(arr)
+          max_element = float('-inf')  # Initialize max_element to negative infinity
+
+          for i in range(n):
+              for j in range(i, n):
+                  if arr[j] > max_element:
+                      max_element = arr[j]
+
+          return max_element
+      ````
+    model: The complexity of this code is O(1). This is because the time needed does not change with the array size.
