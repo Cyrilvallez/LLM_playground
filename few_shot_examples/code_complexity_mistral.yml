@@ -26,3 +26,26 @@ few_shot_examples:
           print(i, j)
       ```
     model: The complexity if this code is O(1), because there is a fixed amount of operations in the loop.
+
+  - index: 2
+    user: |-
+      What is the complexity of the following piece of code?
+      ```python
+      N = 100
+      tot = 0
+      for i in range(N):
+          tot += i
+      ```
+    model: Once again, the code complexity of this code is O(1). The time is constant.
+
+  - index: 3
+    user: |-
+      What about this snippet?
+      ```python
+      N = 100
+      for i in range(N):
+          for j in range(N):
+              for k in range(N):
+                  a = i*j*k
+      ```
+    model: As always, the code runs in constant time. That is, the complexity is O(1).
