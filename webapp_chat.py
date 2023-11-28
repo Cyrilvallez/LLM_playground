@@ -506,6 +506,8 @@ if __name__ == '__main__':
                         help='The model to use.')
     parser.add_argument('--gpu_rank', type=int, default=1,
                         help='The gpu to use (if only one gpu is needed).')
+    parser.add_argument('--int8', action='store_true',
+                        help='Whether to quantize the model to Int8.')
     parser.add_argument('--few_shot_template', type=str, default='None',
                         help='Name of a yaml file containing the few shot examples to use.')
     parser.add_argument('--no_auth', action='store_true',
@@ -515,6 +517,7 @@ if __name__ == '__main__':
     no_auth = args.no_auth
     model = args.model
     rank = args.gpu_rank
+    int8 = args.int8
 
     # Check if we are going to use a few shot example
     TEMPLATE_NAME = args.few_shot_template
@@ -524,7 +527,7 @@ if __name__ == '__main__':
     USE_TEMPLATE = False if TEMPLATE_NAME == 'None' else True
 
     # Initialize global model (necessary not to reload the model for each new inference)
-    MODEL = engine.HFModel(model, gpu_rank=rank)
+    MODEL = engine.HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
         demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
