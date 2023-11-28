@@ -101,6 +101,7 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
             else:
                 raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
     
+    print(conversation.get_prompt())
     
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
     yield '', conversation, conversation.to_gradio_format()
@@ -176,7 +177,8 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
             else:
                 raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
     
-    
+    print(conversation.get_prompt())
+
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
     yield conversation, conversation.to_gradio_format()
 
@@ -256,6 +258,8 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
                 raise gr.Error(f'The following error happened during generation: {repr(e)}')
             else:
                 raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
+            
+    print(conversation.get_prompt())
     
     
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
@@ -315,6 +319,8 @@ def clear_chatbot(username: str) -> tuple[GenericConversation, str, list[list]]:
     if username != '':
         CACHED_CONVERSATIONS[username] = conversation
 
+    print(conversation.get_prompt())
+
     return conversation, conversation.to_gradio_format(), conversation.id
 
 
@@ -362,6 +368,8 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
         LOGGERS[username].setup(inputs_to_callback, flagging_dir='chatbot_logs/UNKNOWN')
 
     conv_id = actual_conv.id
+
+    print(conversation.get_prompt())
     
     return actual_conv, actual_conv.to_gradio_format(), conv_id, username, gr.update(maximum=MODEL.get_context_size())
     
