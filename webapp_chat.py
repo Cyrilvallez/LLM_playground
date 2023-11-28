@@ -61,6 +61,8 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
     tuple[str, GenericConversation, list[list]]
         Components (prompt, conversation, output)
     """
+
+    print(conversation.get_prompt())
     
     if not use_seed:
         seed = None
@@ -101,8 +103,6 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
             else:
                 raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
     
-    print(conversation.get_prompt())
-    
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
     yield '', conversation, conversation.to_gradio_format()
 
@@ -138,6 +138,8 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
     tuple[str, list[list]
         Components (conversation, output).
     """
+
+    print(conversation.get_prompt())
 
     if not use_seed:
         seed = None
@@ -176,8 +178,6 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
                 raise gr.Error(f'The following error happened during generation: {repr(e)}')
             else:
                 raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
-    
-    print(conversation.get_prompt())
 
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
     yield conversation, conversation.to_gradio_format()
@@ -214,6 +214,8 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
     tuple[GenericConversation, list[list]]
         Components (conversation, output)
     """
+
+    print(conversation.get_prompt())
     
     if not use_seed:
         seed = None
@@ -258,8 +260,6 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
                 raise gr.Error(f'The following error happened during generation: {repr(e)}')
             else:
                 raise gr.Error(f'Generation timed out (no new tokens were generated after {timeout} s)')
-            
-    print(conversation.get_prompt())
     
     
     # Update the chatbot with the real conversation (which may be slightly different due to postprocessing)
@@ -369,7 +369,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
 
     conv_id = actual_conv.id
 
-    print(conversation.get_prompt())
+    print(actual_conv.get_prompt())
     
     return actual_conv, actual_conv.to_gradio_format(), conv_id, username, gr.update(maximum=MODEL.get_context_size())
     
