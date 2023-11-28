@@ -519,8 +519,11 @@ if __name__ == '__main__':
     rank = args.gpu_rank
     int8 = args.int8
 
-    # if int8:
-        # utils.set_cuda_visible_device(rank)
+    # We assume that if we use int8 quantization, we will need only 1 GPU and directly set it to the only device
+    if int8:
+        utils.set_cuda_visible_device(rank)
+        # Because it is implicitly re-ranked as 0
+        rank = 0
 
     # Check if we are going to use a few shot example
     TEMPLATE_NAME = args.few_shot_template
@@ -530,15 +533,7 @@ if __name__ == '__main__':
     USE_TEMPLATE = False if TEMPLATE_NAME == 'None' else True
 
     # Initialize global model (necessary not to reload the model for each new inference)
-    # MODEL = engine.HFModel(model, gpu_rank=rank, quantization_8bits=int8)
-    # print(MODEL.get_gpu_memory_footprint())
-
-    from transformers import AutoModelForCausalLM
-    from engine import loader
-    import torch
-    MODEL = AutoModelForCausalLM.from_pretrained(loader.ALL_MODELS_MAPPING[model], device_map={'': rank},
-                                                 torch_dtype=torch.bfloat16, load_in_8bit=True,
-                                                 low_cpu_mem_usage=True)
+    MODEL = engine.HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
         demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
