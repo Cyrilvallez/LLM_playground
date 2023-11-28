@@ -519,8 +519,8 @@ if __name__ == '__main__':
     rank = args.gpu_rank
     int8 = args.int8
 
-    if int8:
-        utils.set_cuda_visible_device(rank)
+    # if int8:
+        # utils.set_cuda_visible_device(rank)
 
     # Check if we are going to use a few shot example
     TEMPLATE_NAME = args.few_shot_template
@@ -530,7 +530,7 @@ if __name__ == '__main__':
     USE_TEMPLATE = False if TEMPLATE_NAME == 'None' else True
 
     # Initialize global model (necessary not to reload the model for each new inference)
-    MODEL = engine.HFModel(model, gpu_rank=0, quantization_8bits=int8)
+    MODEL = engine.HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     print(MODEL.get_gpu_memory_footprint())
     
     if no_auth:
