@@ -531,12 +531,9 @@ if __name__ == '__main__':
 
     # Initialize global model (necessary not to reload the model for each new inference)
     MODEL = engine.HFModel(model, gpu_rank=rank, quantization_8bits=int8)
-    # print(MODEL.get_gpu_memory_footprint())
-
-    import time
-    time.sleep(600)
+    print(MODEL.get_gpu_memory_footprint())
     
-    # if no_auth:
-    #     demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
-    # else:
-    #     demo.queue(concurrency_count=4).launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE])
+    if no_auth:
+        demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
+    else:
+        demo.queue(concurrency_count=4).launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE])
