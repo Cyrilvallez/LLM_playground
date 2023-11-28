@@ -530,7 +530,7 @@ if __name__ == '__main__':
     USE_TEMPLATE = False if TEMPLATE_NAME == 'None' else True
 
     # Initialize global model (necessary not to reload the model for each new inference)
-    MODEL = engine.HFModel(model, gpu_rank=rank, quantization_8bits=int8)
+    MODEL = engine.HFModel(model, gpu_rank=0, quantization_8bits=int8)
     print(MODEL.get_gpu_memory_footprint())
     
     if no_auth:
