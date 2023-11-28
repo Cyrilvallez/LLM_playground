@@ -295,6 +295,21 @@ def load_yaml(filename: str) -> dict:
     return data
 
 
+def set_cuda_visible_device(gpu_rank: int | list[int]):
+    """Set cuda visible devices to `gpu_rank` only.
+
+    Parameters
+    ----------
+    gpu_rank : int | list[int]
+        The GPUs we want to be visible.
+    """
+
+    if type(gpu_rank) == int:
+        gpu_rank = [gpu_rank]
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(x) for x in gpu_rank)
+    
+
 def copy_docstring_and_signature(copied_func: Callable[P, T]):
     """Decorator that copies the docstring and signature of another function.
     Note: the type hints are absolutely necessary for VScode to properly show the signature and docstring

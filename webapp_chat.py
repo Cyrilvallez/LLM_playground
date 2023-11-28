@@ -519,6 +519,9 @@ if __name__ == '__main__':
     rank = args.gpu_rank
     int8 = args.int8
 
+    if int8:
+        utils.set_cuda_visible_device(rank)
+
     # Check if we are going to use a few shot example
     TEMPLATE_NAME = args.few_shot_template
     if '/' in TEMPLATE_NAME:
