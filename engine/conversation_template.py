@@ -5,6 +5,7 @@ import uuid
 import copy
 
 from engine import loader
+from helpers import utils
 
 class GenericConversation(object):
     """Class used to store a conversation with a model."""
@@ -14,6 +15,10 @@ class GenericConversation(object):
         # Conversation history
         self.user_history_text = []
         self.model_history_text = []
+
+        # Initial few-shot examples
+        self.user_few_shot = []
+        self.model_few_shot = []
 
         # system prompt
         self.system_prompt = ''
@@ -33,19 +38,71 @@ class GenericConversation(object):
         self.id = str(uuid.uuid4())
 
 
+    @classmethod
+    def from_yaml_template(cls, path: str, eos_token: str):
+        """Set the system prompt and few-shot examples of a conversation from a yaml file.
+
+        Parameters
+        ----------
+        path : str
+            Path to the yaml file.
+        eos_token : str
+            EOS token for the current model.
+
+        Returns
+        -------
+        GenericConversation
+            The conversation with attributes set from the file.
+        """
+
+        conv = cls(eos_token)
+        data = utils.load_yaml(path)
+
+        if 'system_prompt' in data.keys():
+            conv.set_system_prompt(data['system_prompt'])
+        
+        if 'few_shot_examples' in data.keys():
+            few_shot_examples = data['few_shot_examples']
+            user_few_shot = ['']*len(few_shot_examples)
+            model_few_shot = ['']*len(few_shot_examples)
+
+            for turn in few_shot_examples:
+                if sorted(list(turn.keys())) != ['index', 'model', 'user']:
+                    raise RuntimeError('The format of the yaml file is incorrect.')
+                k = turn['index']
+                user_few_shot[k] = turn['user']
+                model_few_shot[k] = turn['model']
+
+            conv.set_few_shot_examples(user_few_shot, model_few_shot)
+
+        return conv
+
+
     def __len__(self) -> int:
-        """Return the length of the current conversation.
+        """Return the length of the current conversation. This does NOT include the few-shot examples.
         """
         return len(self.user_history_text)
     
     
     def __iter__(self):
-        """Create a generator over (user_input, model_answer) tuples for all turns in the conversation.
+        """Create a generator over (user_input, model_answer) tuples for all turns in the conversation,
+        including the few-shot examples.
         """
         # Generate over copies so that the object in the class cannot change during iteration
+        total_user_input = self.user_few_shot.copy() + self.user_history_text.copy()
+        total_model_answer = self.model_few_shot.copy() + self.model_history_text.copy()
+
+        for user_history, model_history in zip(total_user_input, total_model_answer):
+            yield user_history, model_history
+
+    
+    def iter_without_few_shot(self):
+        """Create a generator over (user_input, model_answer) tuples for all turns in the conversation,
+        NOT including the few-shot examples.
+        """
         for user_history, model_history in zip(self.user_history_text.copy(), self.model_history_text.copy()):
             yield user_history, model_history
-    
+
 
     def __str__(self) -> str:
         """Format the conversation as a string.
@@ -58,7 +115,7 @@ class GenericConversation(object):
         
         else:
             out = ''
-            for i, (user, model) in enumerate(self):
+            for i, (user, model) in enumerate(self.iter_without_few_shot()):
                 out += f'>> User: {user}\n'
                 if model is not None:
                     out += f'>> Model: {model}'
@@ -188,15 +245,24 @@ class GenericConversation(object):
         self.model_history_text = past_model_outputs
 
 
+    def set_few_shot_examples(self, user_few_shot: list[str], model_few_shot: list[str]):
+        """Set the few shot examples.
+        """
+
+        self.user_few_shot = user_few_shot
+        self.model_few_shot = model_few_shot
+
+
     def to_gradio_format(self) -> list[list[str, str]]:
-        """Convert the current conversation to gradio chatbot format.
+        """Convert the current conversation to gradio chatbot format. This does NOT display the few-shot turns.
         """
 
         if len(self) == 0:
             return [[None, None]]
 
-        return [list(conv_turn) for conv_turn in self]
+        return [list(conv_turn) for conv_turn in self.iter_without_few_shot()]
         
+
 
 # reference: https://huggingface.co/spaces/HuggingFaceH4/starchat-playground/blob/main/dialogues.py
 class StarChatConversation(GenericConversation):
@@ -435,7 +501,7 @@ CONVERSATION_MAPPING = {
 }
 
 
-def get_conversation_template(model_name: str) -> GenericConversation:
+def get_empty_conversation_template(model_name: str) -> GenericConversation:
     """Return the conversation object corresponding to `model_name`.
 
     Parameters
@@ -463,6 +529,41 @@ def get_conversation_template(model_name: str) -> GenericConversation:
         conversation = CONVERSATION_MAPPING[model_name](eos_token=eos_token)
     else:
         conversation = GenericConversation(eos_token=eos_token)
+
+    return conversation
+
+
+def get_conversation_from_yaml_template(model_name: str, path: str) -> GenericConversation:
+    """Return the conversation object corresponding to `model_name`, with attribute set from the yaml
+    file at `path`.
+
+    Parameters
+    ----------
+    model_name : str
+        Name of the current model.
+    path : str
+        Path to the template file.
+
+    Returns
+    -------
+    GenericConversation
+        A conversation object template class corresponding to `model_name`.
+
+    """
+
+    if model_name not in loader.ALLOWED_MODELS:
+        raise ValueError(f'The model name must be one of {*loader.ALLOWED_MODELS,}.')
+    
+    # TODO: maybe change this way of obtaining the eos token for a given model as it forces to load the
+    # tokenizer for nothing (maybe create a mapping from name to eos?). For now it is sufficient as 
+    # loading a tokenizer is sufficiently fast
+    tokenizer = loader.load_tokenizer(model_name)
+    eos_token = tokenizer.eos_token
+
+    if model_name in CONVERSATION_MAPPING.keys():
+        conversation = CONVERSATION_MAPPING[model_name].from_yaml_template(path, eos_token=eos_token)
+    else:
+        conversation = GenericConversation.from_yaml_template(path, eos_token=eos_token)
 
     return conversation
 

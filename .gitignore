@@ -3,3 +3,4 @@ __pycache__
 chatbot_logs
 text_logs
 .gradio_login.txt
+test.ipynb

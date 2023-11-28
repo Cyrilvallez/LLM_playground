@@ -14,7 +14,7 @@ from transformers import StoppingCriteriaList, GenerationConfig
 from engine import loader
 from engine import stopping
 from engine.prompt_template import GenericPromptTemplate, get_prompt_template
-from engine.conversation_template import GenericConversation, get_conversation_template
+from engine.conversation_template import GenericConversation, get_empty_conversation_template, get_conversation_from_yaml_template
 from engine.code_parser import CodeParser
 from helpers import utils
 
@@ -837,7 +837,12 @@ class HFModel(object):
 
     def get_empty_conversation(self) -> GenericConversation:
         """Return a new empty conversation with the template of the current model."""
-        return get_conversation_template(self.model_name)
+        return get_empty_conversation_template(self.model_name)
+    
+
+    def get_conversation_from_yaml_template(self, path: str) -> GenericConversation:
+        """Return a new conversation from the given yaml attributes (system prompt and few-shot examples)."""
+        return get_conversation_from_yaml_template(self.model_name, path)
     
 
     def get_context_size(self) -> int:
@@ -879,6 +884,7 @@ class HFModel(object):
         input_length = input.shape[-1]
 
         while input_length + max_new_tokens >= context_size:
+            # Delete the first actual turn (we keep the optional few-shot turns)
             del new_conv.user_history_text[0]
             del new_conv.model_history_text[0]
 

@@ -6,7 +6,6 @@ import copy
 from concurrent.futures import ThreadPoolExecutor
 
 from transformers import TextIteratorStreamer
-import torch
 import gradio as gr
 
 import engine
@@ -78,7 +77,7 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
     # use an executor because it makes it easier to catch possible exceptions
     with ThreadPoolExecutor(max_workers=1) as executor:
         # This will update `conversation` in-place
-        future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
+        future = executor.submit(MODEL.generate_conversation, prompt, system_prompt=None, conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
                                  temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
         
@@ -234,7 +233,7 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
     # use an executor because it makes it easier to catch possible exceptions
     with ThreadPoolExecutor(max_workers=1) as executor:
         # This will update `conversation` in-place
-        future = executor.submit(MODEL.generate_conversation, prompt, system_prompt='', conv_history=conversation,
+        future = executor.submit(MODEL.generate_conversation, prompt, system_prompt=None, conv_history=conversation,
                                  max_new_tokens=max_new_tokens, do_sample=do_sample, top_k=top_k, top_p=top_p,
                                  temperature=temperature, seed=seed, truncate_if_conv_too_long=True, streamer=streamer)
         
@@ -312,7 +311,7 @@ def clear_chatbot(username: str) -> tuple[GenericConversation, str, list[list]]:
     """
 
     # Create new conv object (we need a new unique id)
-    conversation = MODEL.get_empty_conversation()
+    conversation = MODEL.get_conversation_from_yaml_template(TEMPLATE_PATH) if USE_TEMPLATE else MODEL.get_empty_conversation()
     if username != '':
         CACHED_CONVERSATIONS[username] = conversation
 
@@ -349,7 +348,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
         if username in CACHED_CONVERSATIONS.keys():
             actual_conv = CACHED_CONVERSATIONS[username]
         else:
-            actual_conv = MODEL.get_empty_conversation()
+            actual_conv = MODEL.get_conversation_from_yaml_template(TEMPLATE_PATH) if USE_TEMPLATE else MODEL.get_empty_conversation()
             CACHED_CONVERSATIONS[username] = actual_conv
             LOGGERS[username] = gr.CSVLogger()
         
@@ -357,7 +356,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
 
     # In this case we do not know the username so we don't store the conversation in cache
     else:
-        actual_conv = MODEL.get_empty_conversation()
+        actual_conv = MODEL.get_conversation_from_yaml_template(TEMPLATE_PATH) if USE_TEMPLATE else MODEL.get_empty_conversation()
         if username not in LOGGERS.keys():
             LOGGERS[username] = gr.CSVLogger()
         LOGGERS[username].setup(inputs_to_callback, flagging_dir='chatbot_logs/UNKNOWN')
@@ -497,14 +496,27 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='LLM Playground')
     parser.add_argument('--model', type=str, default=DEFAULT, choices=ALLOWED_MODELS,
                         help='The model to use.')
+    parser.add_argument('--gpu_rank', type=int, default=1,
+                        help='The gpu to use (if only one gpu is needed).')
+    parser.add_argument('--few_shot_template', type=str, default='None',
+                        help='Name of a yaml file containing the few shot examples to use.')
     parser.add_argument('--no_auth', action='store_true',
                         help='If given, will NOT require authentification to access the webapp.')
     
     args = parser.parse_args()
     no_auth = args.no_auth
+    model = args.model
+    rank = args.gpu_rank
+
+    # Check if we are going to use a few shot example
+    TEMPLATE_NAME = args.few_shot_template
+    if '/' in TEMPLATE_NAME:
+        raise ValueError('The template name should not contain any "/".')
+    TEMPLATE_PATH = os.path.join(utils.FEW_SHOT_FOLDER, TEMPLATE_NAME)
+    USE_TEMPLATE = False if TEMPLATE_NAME == 'None' else True
 
     # Initialize global model (necessary not to reload the model for each new inference)
-    MODEL = engine.HFModel(args.model)
+    MODEL = engine.HFModel(model, gpu_rank=rank)
     
     if no_auth:
         demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
