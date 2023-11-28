@@ -696,6 +696,9 @@ def load_model(model_name: str, quantization_8bits: bool = False, quantization_4
         # relatively small and should fall on this category.
         if min_gpu_needed == 1:
             only_move_to_one_gpu = True
+            # This is needed to move the model to the correct gpu when using quantization
+            if quantization:
+                additional_kwargs['max_memory'] = {gpu_rank: ''}
         # In this case, we need more than 1 gpu so we create a device_map between different gpus. However, 
         # we minimize the number of gpus used with the max_memory arg instead of naively using device_map='balanced'
         # between all gpus, because the parallelism is not optimized and thus using a lot of gpus is not efficient

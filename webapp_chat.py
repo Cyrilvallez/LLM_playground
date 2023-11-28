@@ -519,8 +519,10 @@ if __name__ == '__main__':
     rank = args.gpu_rank
     int8 = args.int8
 
-    if int8:
-        utils.set_cuda_visible_device(rank)
+    # This assumes that with int8, we will always only need 1 GPU (may be false for very large models or small GPUS)
+    # 
+    # if int8:
+        # utils.set_cuda_visible_device(rank)
 
     # Check if we are going to use a few shot example
     TEMPLATE_NAME = args.few_shot_template
