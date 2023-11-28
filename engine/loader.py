@@ -725,14 +725,14 @@ def load_model(model_name: str, quantization_8bits: bool = False, quantization_4
         model.cuda(gpu_rank)
 
     # For some reason bettertransformer is supported for codegen2 models but makes them crash during the forward
-    # if not ('codegen2-' in model_name):
-    #     # Convert to better transformer to use Pytorch optimizations if supported by the model
-    #     try:
-    #         model = model.to_bettertransformer()
-    #     except:
-    #         pass
+    if not ('codegen2-' in model_name):
+        # Convert to better transformer to use Pytorch optimizations if supported by the model
+        try:
+            model = model.to_bettertransformer()
+        except:
+            pass
         
-    model.eval()
+    # model.eval()
 
     return model
 
