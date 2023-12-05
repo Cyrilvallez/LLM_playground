@@ -8,9 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from transformers import TextIteratorStreamer
 import gradio as gr
 
-import engine
-from engine.streamer import TextContinuationStreamer
-from engine.conversation_template import GenericConversation, CONVERSATION_MAPPING
+from textwiz import HFModel, TextContinuationStreamer
+from textwiz.conversation_template import GenericConversation, CONVERSATION_MAPPING
 from helpers import utils
 
 # Default model to load at start-up
@@ -523,7 +522,7 @@ if __name__ == '__main__':
     USE_TEMPLATE = False if TEMPLATE_NAME == 'None' else True
 
     # Initialize global model (necessary not to reload the model for each new inference)
-    MODEL = engine.HFModel(model, gpu_rank=rank, quantization_8bits=int8)
+    MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
         demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])

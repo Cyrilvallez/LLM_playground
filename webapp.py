@@ -9,10 +9,9 @@ from transformers import TextIteratorStreamer
 import torch
 import gradio as gr
 
-import engine
-from engine import loader
-from engine.streamer import TextContinuationStreamer
-from engine.conversation_template import GenericConversation
+from textwiz import HFModel, TextContinuationStreamer
+from textwiz.conversation_template import GenericConversation
+from textwiz.loader import ALLOWED_MODELS
 from helpers import utils
 
 
@@ -20,7 +19,7 @@ from helpers import utils
 DEFAULT = 'llama2-7B-chat' if torch.cuda.is_available() else 'bloom-560M'
 
 # Initialize global model (necessary not to reload the model for each new inference)
-MODEL = engine.HFModel(DEFAULT)
+MODEL = HFModel(DEFAULT)
 
 # File where the valid credentials are stored
 CREDENTIALS_FILE = os.path.join(utils.ROOT_FOLDER, '.gradio_login.txt')
@@ -82,8 +81,7 @@ def update_model(conversation: GenericConversation, username: str, model_name: s
 
     # Try loading the model
     try:
-        MODEL = engine.HFModel(model_name, quantization_8bits=quantization_8bits,
-                               quantization_4bits=quantization_4bits)
+        MODEL = HFModel(model_name, quantization_8bits=quantization_8bits, quantization_4bits=quantization_4bits)
     except Exception as e:
         raise gr.Error(f'The following error happened during loading: {repr(e)}. Please retry or choose another one.')
     
@@ -519,7 +517,7 @@ def print_gpu_debug() -> str:
 
 
 # Define general elements of the UI (generation parameters)
-model_name = gr.Dropdown(loader.ALLOWED_MODELS, value=DEFAULT, label='Model name',
+model_name = gr.Dropdown(ALLOWED_MODELS, value=DEFAULT, label='Model name',
                          info='Choose the model you want to use.', multiselect=False)
 quantization_8bits = gr.Checkbox(value=False, label='int8 quantization', visible=torch.cuda.is_available())
 quantization_4bits = gr.Checkbox(value=False, label='int4 quantization', visible=torch.cuda.is_available())
