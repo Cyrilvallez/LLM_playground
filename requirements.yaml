@@ -10,19 +10,16 @@ dependencies:
   - pytorch::pytorch=2.0.1 # use pytorch channel
   - pytorch::pytorch-cuda=11.8 # Remove this line if your hardware does not support cuda, otherwise it will create conflicts
   - numpy=1.24.3
-  - matplotlib=3.7.1
-  - seaborn=0.12.2
   - pandas=2.0.2
   - scipy=1.10.1
   - pip:
-    - transformers==4.33.1
-    - tokenizers==0.13.3
+    - transformers==4.35.1
+    - tokenizers==0.14.1
     - accelerate==0.22.0
     - huggingface-hub==0.16.4
     - optimum==1.12.0
     - gradio==3.42.0
     - bitsandbytes==0.41.1
-    - langchain==0.0.216
     - sentencepiece==0.1.99
     - protobuf==3.20.2
     - tiktoken==0.4.0
