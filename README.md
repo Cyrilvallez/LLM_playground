@@ -36,23 +36,31 @@ with other people if you want them to try out the demo.
 
 ## Usage
 
-We use Gradio to easily create a web interface on which you can interact with the models. By default,
-simply run
+We use Gradio to easily create a web interface on which you can interact with the models. The syntax is the following:
 
 ```sh
-python3 webapp.py
+python3 webapp_chat.py [--model model_name] [--int8] [--few_shot_template template.yaml] [--no_auth]
 ```
 
 in order to launch the webapp. You should see both a local and public URL to access the webapp. 
 You will be asked for your credentials when clicking on either link. You can also deactivate authentication 
-using the `--no_auth` flag:
+using the `--no_auth` flag, but in this case, everyone with the public link will be able to access the webapp, even if you did not share the username and password with them.
+
+If you pass the `--int8` flag, the model will use int8 quantization. The `--few_shot_template` flag is used in case you want to set a given system prompt and/or few shot examples.
+
+This default can be used by multiple users at the same time, however the concurrency is set to 4, meaning that only 4 people can perform inference with the model at the same time (if more requests are sent, a queue is used).
+
+## Usage: test of models
+
+To easily experiment with multiple models, you can use:
 
 ```sh
-python3 webapp.py --no_auth
+python3 webapp.py [--no_auth]
 ```
 
-But in this case, everyone with the public link will be able to access the webapp, even if you did not share 
-the username and password with them.
+In this webapp, you will have the opportunity to dynamically switch the model that is used for inference. 
+
+⚠️⚠️⚠️ However, note that the ability to switch models on this demo comes at a cost. Indeed, only one model is shared between all users, so if multiple people use the demo at the same time, switching model while other are performing inference is likely to break the app.
 
 ## Logging
 
