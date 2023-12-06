@@ -1,7 +1,7 @@
 # LLM Playground
 
 This repository is a minimal version of some other work, in order to easily interact with common open-source 
-Large Language Models (LLMs) and to log the interactions.
+Large Language Models (LLMs) and to log the interactions. It is based on the `textwiz` library, a wrapper I created around Huggingface transformers library.
 
 ## Environment setup
 
