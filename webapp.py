@@ -268,6 +268,11 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
         Components (conversation, output_chat).
     """
 
+    if len(conversation) == 0:
+        raise gr.Error(f'You cannot continue an empty conversation.')
+    if conversation.model_history_text[-1] is None:
+        raise gr.Error('You cannot continue an empty last turn.')
+
     if not use_seed:
         seed = None
 
@@ -342,6 +347,11 @@ def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int
     tuple[GenericConversation, list[list]]
         Components (conversation, output_chat)
     """
+
+    if len(conversation) == 0:
+        raise gr.Error(f'You cannot retry generation on an empty conversation.')
+    if conversation.model_history_text[-1] is None:
+        raise gr.Error('You cannot retry generation on an empty last turn')
     
     if not use_seed:
         seed = None
