@@ -5,7 +5,7 @@
 #SBATCH --error=%x-%j.err
 #SBATCH --time=10-00:00:00
 #SBATCH --cpus-per-task=12
-#SBATCH --mem=60G
+#SBATCH --mem=10G
 #SBATCH --partition=nodes
 #SBATCH --gres=gpu:titanv:3
 #SBATCH --chdir=/cluster/raid/home/vacy/LLM_playground
