@@ -289,8 +289,8 @@ if __name__ == '__main__':
     MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
-        demo.queue(default_concurrency_limit=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE],
-                                                       share_server_address='ai-forge.ch:7000')
+        demo.queue(default_concurrency_limit=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])#,
+                                                    #    share_server_address='ai-forge.ch:7000')
         # demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
     else:
         demo.queue(default_concurrency_limit=4).launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE],
