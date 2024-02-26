@@ -17,6 +17,6 @@ eval "$(conda shell.bash hook)"
 conda activate llm-playground
 
 ../frp_server/frp_0.54.0_linux_amd64/frpc -c ../frp_server/frpc/frpc.toml &
-python3 webapp_multi.py "$@"
+python3 -u webapp_multi.py "$@"
 
 conda deactivate
