@@ -230,7 +230,7 @@ with demo:
 
 
     # Perform chat generation when clicking the button or pressing enter
-    generate_event1 = gr.on(triggers=[generate_button.click, prompt.submit], function=chat_generation, inputs=inputs_to_chatbot,
+    generate_event1 = gr.on(triggers=[generate_button.click, prompt.submit], fn=chat_generation, inputs=inputs_to_chatbot,
                             outputs=[prompt, conversation, output])
     
     # Add automatic callback on success
