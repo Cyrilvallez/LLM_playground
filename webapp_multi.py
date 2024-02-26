@@ -418,8 +418,8 @@ if __name__ == '__main__':
     
     if no_auth:
         demo.queue(default_concurrency_limit=4).launch(server_name='127.0.0.1', server_port=8000,
-                                                       favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
+                                                       favicon_path='https://ai-forge.ch/favicon.ico')
     else:
         demo.queue(default_concurrency_limit=4).launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
-                                                       favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
+                                                       favicon_path='https://ai-forge.ch/favicon.ico')
 
