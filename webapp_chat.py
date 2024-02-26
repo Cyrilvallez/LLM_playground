@@ -231,7 +231,7 @@ with demo:
 
     # Perform chat generation when clicking the button or pressing enter
     generate_event1 = gr.on(triggers=[generate_button.click, prompt.submit], fn=chat_generation, inputs=inputs_to_chatbot,
-                            outputs=[prompt, conversation, output], concurrency_limit=1)
+                            outputs=[prompt, conversation, output], concurrency_id='generation', concurrency_limit=5)
     # Add automatic callback on success
     generate_event1.success(logging_generation, inputs=inputs_to_callback, preprocess=False,
                             queue=False, concurrency_limit=None)
@@ -304,7 +304,7 @@ if __name__ == '__main__':
     MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
-        demo.queue(default_concurrency_limit=10).launch(server_name='127.0.0.1', server_port=8000,
+        demo.queue(default_concurrency_limit=2).launch(server_name='127.0.0.1', server_port=8000,
                             favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
     else:
         demo.queue().launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
