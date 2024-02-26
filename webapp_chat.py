@@ -1,20 +1,15 @@
-import gc
 import os
 import argparse
-import queue
-import copy
-from concurrent.futures import ThreadPoolExecutor
 
-from transformers import TextIteratorStreamer
 import gradio as gr
 
-from textwiz import HFModel, TextContinuationStreamer
+from textwiz import HFModel
 from textwiz.conversation_template import GenericConversation, CONVERSATION_MAPPING
 import textwiz.web_interface as wi
 from helpers import utils
 
 # Default model to load at start-up
-DEFAULT = 'llama2-7B-chat'
+DEFAULT = 'mistral-7B-beta'
 
 # All the chat models we allow
 ALLOWED_MODELS = list(CONVERSATION_MAPPING.keys())
@@ -125,6 +120,24 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
     conv_id = actual_conv.id
     
     return actual_conv, actual_conv.to_gradio_format(), conv_id, username, gr.update(maximum=MODEL.get_context_size())
+
+
+# Logging functions. We need to define 3 different as we cannot pass the `flag_option` params from inside the demo
+def logging_generation(*args):
+    """Logging function. Simply flag everything back to the logger."""
+    if LOG_ALL:
+        LOGGERS[args[0]].flag(args, flag_option='generation')
+
+def logging_continuation(*args):
+    """Logging function. Simply flag everything back to the logger."""
+    if LOG_ALL:
+        LOGGERS[args[0]].flag(args, flag_option='continuation')
+
+def logging_retry(*args):
+    """Logging function. Simply flag everything back to the logger."""
+    if LOG_ALL:
+        LOGGERS[args[0]].flag(args, flag_option='retry')
+
     
 
 # Define general elements of the UI (generation parameters)
@@ -144,7 +157,7 @@ use_seed = gr.Checkbox(value=False, label='Use seed', info='Whether to use a fix
 seed = gr.Number(0, label='Seed', info='Seed for reproducibility.', precision=0)
 
 # Define elements of the chatbot Tab
-prompt = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
+prompt = gr.Textbox(placeholder='Write your prompt here.', label='Prompt')
 output = gr.Chatbot(label='Conversation', height=500)
 generate_button = gr.Button('▶️ Submit', variant='primary')
 continue_button = gr.Button('🔂 Continue', variant='primary')
@@ -216,29 +229,26 @@ with demo:
 
 
 
-    # Perform chat generation when clicking the button
-    generate_event1 = generate_button.click(chat_generation, inputs=inputs_to_chatbot,
-                                                 outputs=[prompt, conversation, output])
-
+    # Perform chat generation when clicking the button or pressing enter
+    generate_event1 = gr.on(triggers=[generate_button.click, prompt.submit], function=chat_generation, inputs=inputs_to_chatbot,
+                            outputs=[prompt, conversation, output])
+    
     # Add automatic callback on success
-    generate_event1.success(lambda *args: LOGGERS[args[0]].flag(args, flag_option='generation'),
-                            inputs=inputs_to_callback, preprocess=False)
+    generate_event1.success(logging_generation, inputs=inputs_to_callback, preprocess=False)
     
     # Continue generation when clicking the button
     generate_event2 = continue_button.click(continue_generation, inputs=inputs_to_chatbot_continuation,
                                                  outputs=[conversation, output])
     
     # Add automatic callback on success
-    generate_event2.success(lambda *args: LOGGERS[args[0]].flag(args, flag_option='continuation'),
-                            inputs=inputs_to_callback, preprocess=False)
+    generate_event2.success(logging_continuation, inputs=inputs_to_callback, preprocess=False)
     
     # Continue generation when clicking the button
     generate_event3 = retry_button.click(retry_chat_generation, inputs=inputs_to_chatbot_retry,
                                               outputs=[conversation, output])
     
     # Add automatic callback on success
-    generate_event3.success(lambda *args: LOGGERS[args[0]].flag(args, flag_option='retry'),
-                            inputs=inputs_to_callback, preprocess=False)
+    generate_event3.success(logging_retry, inputs=inputs_to_callback, preprocess=False)
     
     # Clear the prompt and output boxes when clicking the button
     clear_button.click(clear_chatbot, inputs=[username], outputs=[conversation, output, conv_id], queue=False)
@@ -265,12 +275,15 @@ if __name__ == '__main__':
                         help='Name of a yaml file containing the few shot examples to use.')
     parser.add_argument('--no_auth', action='store_true',
                         help='If given, will NOT require authentication to access the webapp.')
+    parser.add_argument('--log_all', action='store_true',
+                        help='If given, will automatically log all interactions.')
     
     args = parser.parse_args()
     no_auth = args.no_auth
     model = args.model
     rank = args.gpu_rank
     int8 = args.int8
+    LOG_ALL = args.log_all
 
     # We assume that if we use int8 quantization, we will need only 1 GPU and directly set it to the only device
     if int8:
@@ -289,9 +302,9 @@ if __name__ == '__main__':
     MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
-        demo.queue(default_concurrency_limit=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE],
-                                                       share_server_address='ai-forge.ch:7000',
-                                                       share_server_protocol="https")
+        demo.queue(default_concurrency_limit=4).launch(server_name='127.0.0.1', server_port=8000,
+                                                       favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'),
+                                                       )
         # demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
     else:
         demo.queue(default_concurrency_limit=4).launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE],
