@@ -1,5 +1,6 @@
 import os
 import argparse
+from collections import defaultdict
 
 import gradio as gr
 
@@ -17,11 +18,17 @@ ALLOWED_MODELS = list(CONVERSATION_MAPPING.keys())
 # File where the valid credentials are stored
 CREDENTIALS_FILE = os.path.join(utils.ROOT_FOLDER, '.gradio_login.txt')
 
+
+def get_empty_conversation() -> GenericConversation:
+    """Return an empty conversation given the currect model and optional chat template"""
+    return MODEL.get_conversation_from_yaml_template(TEMPLATE_PATH) if USE_TEMPLATE else MODEL.get_empty_conversation()
+
+
 # This will be a mapping between users and current conversation, to reload them with page reload
-CACHED_CONVERSATIONS = {}
+CACHED_CONVERSATIONS = defaultdict(get_empty_conversation)
 
 # Need to define one logger per user
-LOGGERS = {}
+LOGGERS = defaultdict(gr.CSVLogger)
 
 
 def chat_generation(conversation: GenericConversation, prompt: str, max_new_tokens: int, do_sample: bool,
@@ -67,7 +74,7 @@ def clear_chatbot(username: str) -> tuple[GenericConversation, str, list[list]]:
     """
 
     # Create new conv object (we need a new unique id)
-    conversation = MODEL.get_conversation_from_yaml_template(TEMPLATE_PATH) if USE_TEMPLATE else MODEL.get_empty_conversation()
+    conversation = get_empty_conversation()
     if username != '':
         CACHED_CONVERSATIONS[username] = conversation
 
@@ -99,23 +106,18 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
     if username is None:
         username = ''
     
-    # Check if we have cached a value for the conversation to use
+    # Get current registered conversation (the defaultdict will provide and register a new empty one if not 
+    # already present)
     if username != '':
-        if username in CACHED_CONVERSATIONS.keys():
-            actual_conv = CACHED_CONVERSATIONS[username]
-        else:
-            actual_conv = MODEL.get_conversation_from_yaml_template(TEMPLATE_PATH) if USE_TEMPLATE else MODEL.get_empty_conversation()
-            CACHED_CONVERSATIONS[username] = actual_conv
-            LOGGERS[username] = gr.CSVLogger()
-        
-        LOGGERS[username].setup(inputs_to_callback, flagging_dir=f'chatbot_logs/{username}')
+        actual_conv = CACHED_CONVERSATIONS[username]
+        if LOG_ALL:
+            LOGGERS[username].setup(inputs_to_callback, flagging_dir=f'chatbot_logs/{username}')
 
     # In this case we do not know the username so we don't store the conversation in cache
     else:
-        actual_conv = MODEL.get_conversation_from_yaml_template(TEMPLATE_PATH) if USE_TEMPLATE else MODEL.get_empty_conversation()
-        if username not in LOGGERS.keys():
-            LOGGERS[username] = gr.CSVLogger()
-        LOGGERS[username].setup(inputs_to_callback, flagging_dir='chatbot_logs/UNKNOWN')
+        actual_conv = get_empty_conversation()
+        if LOG_ALL:
+            LOGGERS[username].setup(inputs_to_callback, flagging_dir='chatbot_logs/UNKNOWN')
 
     conv_id = actual_conv.id
     
