@@ -233,7 +233,7 @@ with demo:
 
     # Perform chat generation when clicking the button or pressing enter
     generate_event1 = gr.on(triggers=[generate_button.click, prompt.submit], fn=chat_generation, inputs=inputs_to_chatbot,
-                            outputs=[prompt, conversation, output], concurrency_id='generation', concurrency_limit=1)
+                            outputs=[prompt, conversation, output], concurrency_id='generation')
     # Add automatic callback on success
     generate_event1.success(logging_generation, inputs=inputs_to_callback, preprocess=False,
                             queue=False, concurrency_limit=None)
@@ -277,6 +277,8 @@ if __name__ == '__main__':
                         help='Whether to quantize the model to Int8.')
     parser.add_argument('--few_shot_template', type=str, default='None',
                         help='Name of a yaml file containing the few shot examples to use.')
+    parser.add_argument('--concurrency', type=int, default=1,
+                        help='Number of threads that can run in parallel on the GPU.')
     parser.add_argument('--no_auth', action='store_true',
                         help='If given, will NOT require authentication to access the webapp.')
     parser.add_argument('--log', action='store_true',
@@ -287,6 +289,7 @@ if __name__ == '__main__':
     model = args.model
     rank = args.gpu_rank
     int8 = args.int8
+    concurrency = args.concurrency
     LOG = args.log
 
     # We assume that if we use int8 quantization, we will need only 1 GPU and directly set it to the only device
@@ -306,8 +309,8 @@ if __name__ == '__main__':
     MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
-        demo.queue(default_concurrency_limit=2).launch(server_name='127.0.0.1', server_port=8000,
-                            favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000,
+                                                                 favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
     else:
-        demo.queue().launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
-                            favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
+                                                                 favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
