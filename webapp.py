@@ -271,7 +271,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='LLM Playground')
     parser.add_argument('--model', type=str, default=DEFAULT, choices=ALLOWED_MODELS,
                         help='The model to use.')
-    parser.add_argument('--gpu_rank', type=int, default=1,
+    parser.add_argument('--gpu_rank', type=int, default=0,
                         help='The gpu to use (if only one gpu is needed).')
     parser.add_argument('--int8', action='store_true',
                         help='Whether to quantize the model to Int8.')
