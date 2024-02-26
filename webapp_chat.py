@@ -231,35 +231,37 @@ with demo:
 
     # Perform chat generation when clicking the button or pressing enter
     generate_event1 = gr.on(triggers=[generate_button.click, prompt.submit], fn=chat_generation, inputs=inputs_to_chatbot,
-                            outputs=[prompt, conversation, output])
-    
+                            outputs=[prompt, conversation, output], concurrency_id='generation', concurrency_limit=5)
     # Add automatic callback on success
-    generate_event1.success(logging_generation, inputs=inputs_to_callback, preprocess=False)
+    generate_event1.success(logging_generation, inputs=inputs_to_callback, preprocess=False,
+                            queue=False, concurrency_limit=None)
     
     # Continue generation when clicking the button
     generate_event2 = continue_button.click(continue_generation, inputs=inputs_to_chatbot_continuation,
-                                                 outputs=[conversation, output])
-    
+                                                 outputs=[conversation, output], concurrency_id='generation')
     # Add automatic callback on success
-    generate_event2.success(logging_continuation, inputs=inputs_to_callback, preprocess=False)
+    generate_event2.success(logging_continuation, inputs=inputs_to_callback, preprocess=False,
+                            queue=False, concurrency_limit=None)
     
     # Continue generation when clicking the button
     generate_event3 = retry_button.click(retry_chat_generation, inputs=inputs_to_chatbot_retry,
-                                              outputs=[conversation, output])
-    
+                                              outputs=[conversation, output], concurrency_id='generation')
     # Add automatic callback on success
-    generate_event3.success(logging_retry, inputs=inputs_to_callback, preprocess=False)
+    generate_event3.success(logging_retry, inputs=inputs_to_callback, preprocess=False,
+                            queue=False, concurrency_limit=None)
     
     # Clear the prompt and output boxes when clicking the button
-    clear_button.click(clear_chatbot, inputs=[username], outputs=[conversation, output, conv_id], queue=False)
+    clear_button.click(clear_chatbot, inputs=[username], outputs=[conversation, output, conv_id],
+                       queue=False, concurrency_limit=None)
 
     # Change visibility of generation parameters if we perform greedy search
     do_sample.input(lambda value: [gr.update(visible=value) for _ in range(5)], inputs=do_sample,
-                    outputs=[top_k, top_p, temperature, use_seed, seed], queue=False)
+                    outputs=[top_k, top_p, temperature, use_seed, seed], queue=False, concurrency_limit=None)
     
     # Correctly display the model and quantization currently on memory if we refresh the page (instead of default
     # value for the elements) and correctly reset the chat output
-    loading_events = demo.load(loading, outputs=[conversation, output, conv_id, username, max_new_tokens], queue=False)
+    loading_events = demo.load(loading, outputs=[conversation, output, conv_id, username, max_new_tokens],
+                               queue=False, concurrency_limit=None)
 
 
 if __name__ == '__main__':
@@ -302,12 +304,8 @@ if __name__ == '__main__':
     MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
-        demo.queue(default_concurrency_limit=4).launch(server_name='127.0.0.1', server_port=8000,
-                                                       favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'),
-                                                       )
-        # demo.queue(concurrency_count=4).launch(share=True, blocked_paths=[CREDENTIALS_FILE])
+        demo.queue().launch(server_name='127.0.0.1', server_port=8000,
+                            favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
     else:
-        demo.queue(default_concurrency_limit=4).launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE],
-                                                       share_server_address='ai-forge.ch:7000',
-                                                       share_server_protocol="https")
-        # demo.queue(concurrency_count=4).launch(share=True, auth=authentication, blocked_paths=[CREDENTIALS_FILE])
+        demo.queue().launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
+                            favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
