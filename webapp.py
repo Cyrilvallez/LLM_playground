@@ -278,7 +278,7 @@ if __name__ == '__main__':
     parser.add_argument('--few_shot_template', type=str, default='None',
                         help='Name of a yaml file containing the few shot examples to use.')
     parser.add_argument('--concurrency', type=int, default=1,
-                        help='Number of threads that can run in parallel on the GPU.')
+                        help='Number of threads that can run for generation (using the GPUs).')
     parser.add_argument('--no_auth', action='store_true',
                         help='If given, will NOT require authentication to access the webapp.')
     parser.add_argument('--log', action='store_true',
