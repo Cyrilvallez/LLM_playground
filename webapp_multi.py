@@ -237,13 +237,13 @@ seed = gr.Number(0, label='Seed', info='Seed for reproducibility.', precision=0)
 load_button = gr.Button('Load model', variant='primary')
 
 # Define elements of the simple generation Tab
-prompt_text = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
+prompt_text = gr.Textbox(placeholder='Write your prompt here.', label='Prompt')
 output_text = gr.Textbox(label='Model output')
 generate_button_text = gr.Button('▶️ Submit', variant='primary')
 clear_button_text = gr.Button('🗑 Clear', variant='secondary')
 
 # Define elements of the chatbot Tab
-prompt_chat = gr.Textbox(placeholder='Write your prompt here.', label='Prompt', lines=2)
+prompt_chat = gr.Textbox(placeholder='Write your prompt here.', label='Prompt')
 output_chat = gr.Chatbot(label='Conversation')
 generate_button_chat = gr.Button('▶️ Submit', variant='primary')
 continue_button_chat = gr.Button('🔂 Continue', variant='primary')
@@ -326,7 +326,7 @@ with demo:
         with gr.Column(scale=10):
                 
             # First box for model selection
-            with gr.Box():
+            with gr.Group():
                 gr.Markdown("### Model selection")
                 with gr.Row():
                     model_name.render()
