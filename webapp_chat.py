@@ -9,7 +9,7 @@ import textwiz.web_interface as wi
 from helpers import utils
 
 # Default model to load at start-up
-DEFAULT = 'mistral-7B-beta'
+DEFAULT = 'zephyr-7B-beta'
 
 # All the chat models we allow
 ALLOWED_MODELS = list(CONVERSATION_MAPPING.keys())
