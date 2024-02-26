@@ -16,8 +16,7 @@ eval "$(conda shell.bash hook)"
 # Activate (local) env
 conda activate llm-playground
 
-# Note: the -u option is absolutely necesary here to force the flush of the link 
-# to connect to the app!
-python3 -u webapp_chat.py "$@"
+../frp_server/frp_0.54.0_linux_amd64/frpc -c ../frp_server/frpc/frpc.toml &
+python3 webapp_multi.py "$@"
 
 conda deactivate
