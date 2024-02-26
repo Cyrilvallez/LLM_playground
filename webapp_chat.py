@@ -304,7 +304,7 @@ if __name__ == '__main__':
     MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
     
     if no_auth:
-        demo.queue().launch(server_name='127.0.0.1', server_port=8000,
+        demo.queue(default_concurrency_limit=10).launch(server_name='127.0.0.1', server_port=8000,
                             favicon_path=os.path.join(utils.ROOT_FOLDER, 'favicon.ico'))
     else:
         demo.queue().launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
