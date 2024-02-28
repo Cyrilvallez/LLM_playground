@@ -9,6 +9,7 @@ from textwiz import HFModel
 from textwiz.conversation_template import GenericConversation
 from textwiz.loader import ALLOWED_MODELS
 import textwiz.web_interface as wi
+from textwiz.web_interface import generator
 from helpers import utils
 
 
@@ -92,14 +93,14 @@ def update_model(conversation: GenericConversation, username: str, model_name: s
 
 
 def text_generation(prompt: str, max_new_tokens: int, do_sample: bool, top_k: int, top_p: float,
-                    temperature: float, use_seed: bool, seed: int) -> str:
+                    temperature: float, use_seed: bool, seed: int) -> generator[str]:
     yield from wi.text_generation(MODEL, prompt=prompt, max_new_tokens=max_new_tokens, do_sample=do_sample,
                                   top_k=top_k, top_p=top_p, temperature=temperature, use_seed=use_seed, seed=seed)
 
 
 def chat_generation(conversation: GenericConversation, prompt: str, max_new_tokens: int, do_sample: bool,
                     top_k: int, top_p: float, temperature: float, use_seed: bool,
-                    seed: int) -> tuple[str, GenericConversation, list[list]]:
+                    seed: int) -> generator[tuple[str, GenericConversation, list[list]]]:
     yield from wi.chat_generation(MODEL, conversation=conversation, prompt=prompt, max_new_tokens=max_new_tokens,
                                   do_sample=do_sample, top_k=top_k, top_p=top_p, temperature=temperature, use_seed=use_seed,
                                   seed=seed, system_prompt='')
@@ -107,7 +108,7 @@ def chat_generation(conversation: GenericConversation, prompt: str, max_new_toke
 
 def continue_generation(conversation: GenericConversation, additional_max_new_tokens: int, do_sample: bool,
                         top_k: int, top_p: float, temperature: float, use_seed: bool,
-                        seed: int) -> tuple[GenericConversation, list[list]]:
+                        seed: int) -> generator[tuple[GenericConversation, list[list]]]:
     yield from wi.continue_generation(MODEL, conversation=conversation, additional_max_new_tokens=additional_max_new_tokens,
                                       do_sample=do_sample, top_k=top_k, top_p=top_p, temperature=temperature,
                                       use_seed=use_seed, seed=seed)
@@ -115,7 +116,7 @@ def continue_generation(conversation: GenericConversation, additional_max_new_to
 
 def retry_chat_generation(conversation: GenericConversation, max_new_tokens: int, do_sample: bool,
                           top_k: int, top_p: float, temperature: float, use_seed: bool,
-                          seed: int) -> tuple[GenericConversation, list[list]]:
+                          seed: int) -> generator[tuple[GenericConversation, list[list]]]:
     yield from wi.retry_chat_generation(MODEL, conversation=conversation, max_new_tokens=max_new_tokens,
                                         do_sample=do_sample, top_k=top_k, top_p=top_p, temperature=temperature,
                                         use_seed=use_seed, seed=seed)
