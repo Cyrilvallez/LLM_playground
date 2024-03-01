@@ -25,10 +25,6 @@ CREDENTIALS_FILE = os.path.join(utils.ROOT_FOLDER, '.gradio_login.txt')
 # This will be a mapping between users and current conversation, to reload them with page reload
 CACHED_CONVERSATIONS = {}
 
-# Need to define one logger per user
-LOGGERS_TEXT = {}
-LOGGERS_CHAT = {}
-
 
 def update_model(conversation: GenericConversation, username: str, model_name: str, quantization_8bits: bool,
                  quantization_4bits: bool) -> tuple[GenericConversation, str, str, str, str, list[list]]:
@@ -181,11 +177,6 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
         else:
             actual_conv = MODEL.get_empty_conversation()
             CACHED_CONVERSATIONS[username] = actual_conv
-            LOGGERS_TEXT[username] = gr.CSVLogger()
-            LOGGERS_CHAT[username] = gr.CSVLogger()
-
-        LOGGERS_TEXT[username].setup(inputs_to_text_callback, flagging_dir=f'text_logs/{username}')
-        LOGGERS_CHAT[username].setup(inputs_to_chat_callback, flagging_dir=f'chatbot_logs/{username}')
 
     else:
         actual_conv = MODEL.get_empty_conversation()
@@ -299,18 +290,7 @@ with demo:
         # but scale needs to be an integer
         with gr.Column(scale=17):
 
-            # Tab 1 for simple text generation
-            with gr.Tab('Text generation'):
-                prompt_text.render()
-                with gr.Row():
-                    generate_button_text.render()
-                    clear_button_text.render()
-                output_text.render()
-
-                gr.Markdown("### Prompt Examples")
-                gr.Examples(prompt_examples, inputs=prompt_text)
-
-            # Tab 2 for chat mode
+            # Tab 1 for chat mode
             with gr.Tab('Chat mode'):
                 prompt_chat.render()
                 with gr.Row():
@@ -322,6 +302,18 @@ with demo:
 
                 gr.Markdown("### Prompt Examples")
                 gr.Examples(prompt_examples, inputs=prompt_chat)
+
+
+            # Tab 2 for simple text generation
+            with gr.Tab('Text generation'):
+                prompt_text.render()
+                with gr.Row():
+                    generate_button_text.render()
+                    clear_button_text.render()
+                output_text.render()
+
+                gr.Markdown("### Prompt Examples")
+                gr.Examples(prompt_examples, inputs=prompt_text)
 
         # Second column defines model selection and generation parameters
         with gr.Column(scale=10):
@@ -361,36 +353,24 @@ with demo:
     # Perform simple text generation when clicking the button
     generate_event1 = gr.on(triggers=[generate_button_text.click, prompt_text.submit], fn=text_generation,
                             inputs=inputs_to_simple_generation, outputs=output_text, concurrency_id='generation')
-    # Add automatic callback on success
-    generate_event1.success(lambda *args: LOGGERS_TEXT[args[3]].flag(args) if args[3] != '' else None,
-                            inputs=inputs_to_text_callback, preprocess=False, queue=False, concurrency_limit=None)
 
     # Perform chat generation when clicking the button
     generate_event2 = gr.on(triggers=[generate_button_chat.click, prompt_chat.submit], fn=chat_generation,
                             inputs=inputs_to_chatbot, outputs=[prompt_chat, conversation, output_chat],
                             concurrency_id='generation')
-    # Add automatic callback on success
-    generate_event2.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='generation') if args[3] != '' \
-                            else None, inputs=inputs_to_chat_callback, preprocess=False, queue=False, concurrency_limit=None)
     
     # Continue generation when clicking the button
     generate_event3 = continue_button_chat.click(continue_generation, inputs=inputs_to_chatbot_continuation,
                                                  outputs=[conversation, output_chat], concurrency_id='generation')
-    # Add automatic callback on success
-    generate_event3.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='continuation') if args[3] != '' \
-                            else None, inputs=inputs_to_chat_callback, preprocess=False, queue=False, concurrency_limit=None)
     
     # Continue generation when clicking the button
     generate_event4 = retry_button_chat.click(retry_chat_generation, inputs=inputs_to_chatbot_retry,
                                               outputs=[conversation, output_chat], concurrency_id='generation')
-    # Add automatic callback on success
-    generate_event4.success(lambda *args: LOGGERS_CHAT[args[3]].flag(args, flag_option='retry') if args[3] != '' \
-                            else None, inputs=inputs_to_chat_callback, preprocess=False, queue=False, concurrency_limit=None)
 
     # Switch the model loaded in memory when clicking
     load_button.click(update_model, inputs=[conversation, username, model_name, quantization_8bits, quantization_4bits],
                       outputs=[conversation, conv_id, prompt_text, output_text, prompt_chat, output_chat],
-                      cancels=[generate_event1, generate_event2, generate_event3])
+                      cancels=[generate_event1, generate_event2, generate_event3, generate_event4], concurrency_limit=1)
     
     # Clear the prompt and output boxes when clicking the button
     clear_button_text.click(lambda: ['', ''], outputs=[prompt_text, output_text], queue=False, concurrency_limit=None)
@@ -413,14 +393,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='LLM Playground')
     parser.add_argument('--no_auth', action='store_true',
                         help='If given, will NOT require authentification to access the webapp.')
+    parser.add_argument('--concurrency', type=int, default=1,
+                        help='Number of threads that can run for generation (using the GPUs).')
     
     args = parser.parse_args()
     no_auth = args.no_auth
+    concurrency = args.concurrency
     
     if no_auth:
-        demo.queue(default_concurrency_limit=4).launch(server_name='127.0.0.1', server_port=8000,
-                                                       favicon_path='https://ai-forge.ch/favicon.ico')
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000,
+                                                                 favicon_path='https://ai-forge.ch/favicon.ico')
     else:
-        demo.queue(default_concurrency_limit=4).launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
-                                                       favicon_path='https://ai-forge.ch/favicon.ico')
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
+                                                                 favicon_path='https://ai-forge.ch/favicon.ico')
 
