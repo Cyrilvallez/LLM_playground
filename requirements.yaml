@@ -7,7 +7,7 @@ dependencies:
   - python=3.11.3
   - conda
   - pip
-  - pytorch::pytorch=2.0.1 # use pytorch channel
+  - pytorch::pytorch>=2.2.0 # use pytorch channel
   - pytorch::pytorch-cuda=11.8 # Remove this line if your hardware does not support cuda, otherwise it will create conflicts
   - numpy
   - pandas
