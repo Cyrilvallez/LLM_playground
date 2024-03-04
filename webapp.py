@@ -144,9 +144,9 @@ def logging_retry(*args):
     
 
 # Define general elements of the UI (generation parameters)
-max_new_tokens = gr.Slider(32, 4096, value=512, step=32, label='Max new tokens',
+max_new_tokens = gr.Slider(32, 4096, value=2048, step=32, label='Max new tokens',
                            info='Maximum number of new tokens to generate.')
-max_additional_new_tokens = gr.Slider(16, 1028, value=128, step=16, label='Max additional new tokens',
+max_additional_new_tokens = gr.Slider(16, 1028, value=256, step=16, label='Max additional new tokens',
                            info='New tokens to generate with "Continue last answer".')
 do_sample = gr.Checkbox(value=True, label='Sampling', info=('Whether to incorporate randomness in generation. '
                                                             'If not selected, perform greedy search.'))
