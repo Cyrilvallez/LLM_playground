@@ -1,8 +1,10 @@
 import os
 import argparse
+import gc
 from collections import defaultdict
 
 import gradio as gr
+import torch
 
 from textwiz import HFModel
 from textwiz.conversation_template import GenericConversation, CONVERSATION_MAPPING
@@ -303,7 +305,14 @@ if __name__ == '__main__':
     # Initialize global model (necessary not to reload the model for each new inference)
     try:
         MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
+        correct_load = True
+    # Cannot directly retry in the except clause as the exception retain cuda tensors
     except RuntimeError:
+        correct_load = False
+
+    if not correct_load:
+        gc.collect()
+        torch.cuda.empty_cache()
         MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8, max_fraction_gpu_0=0.95, max_fraction_gpus=0.95)
     
     if no_auth:
