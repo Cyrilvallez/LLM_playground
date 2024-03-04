@@ -301,7 +301,10 @@ if __name__ == '__main__':
     USE_TEMPLATE = False if TEMPLATE_NAME == 'None' else True
 
     # Initialize global model (necessary not to reload the model for each new inference)
-    MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
+    try:
+        MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
+    except RuntimeError:
+        MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8, max_fraction_gpu_0=0.95, max_fraction_gpus=0.95)
     
     if no_auth:
         demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000,
