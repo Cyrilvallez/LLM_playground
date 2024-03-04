@@ -293,12 +293,6 @@ if __name__ == '__main__':
     concurrency = args.concurrency
     LOG = args.log
 
-    # We assume that if we use int8 quantization, we will need only 1 GPU and directly set it to the only device
-    if int8:
-        utils.set_cuda_visible_device(rank)
-        # Because it is implicitly re-ranked as 0
-        rank = 0
-
     # Check if we are going to use a few shot example
     TEMPLATE_NAME = args.few_shot_template
     if '/' in TEMPLATE_NAME:
