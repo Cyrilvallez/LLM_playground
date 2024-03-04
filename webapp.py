@@ -308,8 +308,8 @@ if __name__ == '__main__':
         MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8, max_fraction_gpu_0=0.95, max_fraction_gpus=0.95)
     
     if no_auth:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000,
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')
     else:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861, auth=authentication,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')

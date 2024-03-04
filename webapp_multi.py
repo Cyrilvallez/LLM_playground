@@ -401,9 +401,9 @@ if __name__ == '__main__':
     concurrency = args.concurrency
     
     if no_auth:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000,
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')
     else:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=8000, auth=authentication,
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861, auth=authentication,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')
 
