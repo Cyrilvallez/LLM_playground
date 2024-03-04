@@ -122,7 +122,7 @@ def loading(request: gr.Request) -> tuple[GenericConversation, list[list], str, 
 
     conv_id = actual_conv.id
     
-    return actual_conv, actual_conv.to_gradio_format(), conv_id, username, gr.update(maximum=MODEL.get_context_size())
+    return actual_conv, gr.update(value=actual_conv.to_gradio_format(), label=MODEL.model_name), conv_id, username, gr.update(maximum=MODEL.get_context_size())
 
 
 # Logging functions. We need to define 3 different as we cannot pass the `flag_option` params from inside the demo
