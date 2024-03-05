@@ -309,15 +309,15 @@ if __name__ == '__main__':
     # Initialize global model (necessary not to reload the model for each new inference)
     try:
         MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8)
-        MODEL.model = None
-        torch.cuda.empty_cache()
-        new_model = AutoModelForCausalLM.from_pretrained('codellama/CodeLlama-34b-Instruct-hf', torch_dtype=torch.bfloat16,
-                                             low_cpu_mem_usage=True, attn_implementation='flash_attention_2', device_map='auto')
-        MODEL.model = new_model
-        
     # Try with more space per gpu (usually helpful with quantization)
     except ValueError:
         MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8, max_fraction_gpu_0=0.95, max_fraction_gpus=0.95)
+
+    MODEL.model = None
+    torch.cuda.empty_cache()
+    new_model = AutoModelForCausalLM.from_pretrained('codellama/CodeLlama-34b-Instruct-hf', torch_dtype=torch.bfloat16,
+                                            low_cpu_mem_usage=True, attn_implementation='flash_attention_2', device_map='auto')
+    MODEL.model = new_model
     
     print(f'Analytics: {demo.analytics_enabled}')
     if no_auth:
