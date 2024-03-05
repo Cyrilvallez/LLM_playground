@@ -10,6 +10,9 @@ import textwiz.web_interface as wi
 from textwiz.web_interface import generator
 from helpers import utils
 
+# Disable analytics (can be set to anything except True really, we set it to False)
+os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
+
 # Default model to load at start-up
 DEFAULT = 'zephyr-7B-beta'
 
@@ -307,9 +310,10 @@ if __name__ == '__main__':
     except ValueError:
         MODEL = HFModel(model, gpu_rank=rank, quantization_8bits=int8, max_fraction_gpu_0=0.95, max_fraction_gpus=0.95)
     
+    print(f'Analytics: {demo.analytics_enabled}')
     if no_auth:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861,
+        demo.queue(default_concurrency_limit=concurrency).launch(share=True, server_name='127.0.0.1', server_port=7861,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')
     else:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861, auth=authentication,
+        demo.queue(default_concurrency_limit=concurrency).launch(share=True,server_name='127.0.0.1', server_port=7861, auth=authentication,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')
