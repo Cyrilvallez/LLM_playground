@@ -316,7 +316,8 @@ if __name__ == '__main__':
     MODEL.model = None
     torch.cuda.empty_cache()
     new_model = AutoModelForCausalLM.from_pretrained('codellama/CodeLlama-34b-Instruct-hf', torch_dtype=torch.bfloat16,
-                                            low_cpu_mem_usage=True, attn_implementation='flash_attention_2', device_map='auto')
+                                            low_cpu_mem_usage=True, attn_implementation='flash_attention_2', device_map='auto',
+                                            max_memory={0: '38GiB', 1: '38GiB', 2: '38GiB'})
     MODEL.model = new_model
     
     print(f'Analytics: {demo.analytics_enabled}')
