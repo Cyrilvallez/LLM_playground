@@ -25,3 +25,7 @@ dependencies:
     - protobuf
     - tiktoken
     - textwiz
+    # For flash attention 2
+    - packaging
+    - ninja
+    - flash-attn --no-build-isolation
