@@ -151,7 +151,7 @@ max_new_tokens = gr.Slider(32, 4096, value=2048, step=32, label='Max new tokens'
                            info='Maximum number of new tokens to generate.')
 max_additional_new_tokens = gr.Slider(16, 1028, value=256, step=16, label='Max additional new tokens',
                            info='New tokens to generate with "Continue last answer".')
-do_sample = gr.Checkbox(value=True, label='Sampling', info=('Whether to incorporate randomness in generation. '
+do_sample = gr.Checkbox(value=False, label='Sampling', info=('Whether to incorporate randomness in generation. '
                                                             'If not selected, perform greedy search.'))
 top_k = gr.Slider(0, 200, value=50, step=5, label='Top-k',
                info='How many tokens with max probability to consider. 0 to deactivate.')
