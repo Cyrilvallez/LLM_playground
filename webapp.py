@@ -287,6 +287,8 @@ if __name__ == '__main__':
                         help='If given, will NOT require authentication to access the webapp.')
     parser.add_argument('--log', action='store_true',
                         help='If given, will automatically log all interactions.')
+    parser.add_argument('--port', type=int, default=7861,
+                        help='On which port to deploy the webapp.')
     
     args = parser.parse_args()
     no_auth = args.no_auth
@@ -295,6 +297,7 @@ if __name__ == '__main__':
     int8 = args.int8
     concurrency = args.concurrency
     LOG = args.log
+    port = args.port
 
     # Check if we are going to use a few shot example
     TEMPLATE_NAME = args.few_shot_template
@@ -312,8 +315,8 @@ if __name__ == '__main__':
     
     print(f'Analytics: {demo.analytics_enabled}')
     if no_auth:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861,
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=port,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')
     else:
-        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=7861, auth=authentication,
+        demo.queue(default_concurrency_limit=concurrency).launch(server_name='127.0.0.1', server_port=port, auth=authentication,
                                                                  favicon_path='https://ai-forge.ch/favicon.ico')
