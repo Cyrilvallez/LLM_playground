@@ -28,4 +28,3 @@ dependencies:
     # For flash attention 2
     - packaging
     - ninja
-    - flash-attn --no-build-isolation

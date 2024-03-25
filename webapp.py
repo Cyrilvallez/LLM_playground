@@ -10,7 +10,7 @@ import textwiz.web_interface as wi
 from textwiz.web_interface import generator
 from helpers import utils
 
-# Disable analytics (can be set to anything except True really, we set it to False)
+# Disable analytics (can be set to anything except True really, we set it to False for readability)
 os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
 
 # Default model to load at start-up
